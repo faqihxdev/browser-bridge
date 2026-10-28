@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Browser Bridge",
+  "version": "0.1.0",
+  "description": "Connect local agents to browser APIs and manage their active tabs.",
+  "permissions": [
+    "nativeMessaging",
+    "tabs",
+    "tabGroups",
+    "bookmarks",
+    "history",
+    "downloads",
+    "cookies",
+    "sessions",
+    "management",
+    "browsingData",
+    "privacy",
+    "contentSettings",
+    "topSites",
+    "fontSettings",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Browser Bridge"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwf4xUcblhSfhL4GcGnt+aRzP2QGzOJKBg44oAdX7se2LK1NkeD5NPHfs+/kWo0CP994egTFGbWimc7csKr9HsdkXHeCBA+4c4QKcwN+F6ES5oZ9+EKCMtPNcmfct0MigIKe1KpZFAF4votRPZ/HLO7Mc1J1oqX0GBIrYcFaeimFZzZ6tk9qE13aXEaeQliUULP8ALICy1HLwwNL6fRHKBAzQyFmzbgSS6JHRZwyVR4/98Ly7YS7vpX2fqB67zoKv4ecHHFPqXlCcPVyT8bdVHCr+darXgsCFKSCcbY7r86uAGrKkxuAd3jVn5cr4BML17eLbv2Ai8I/7mQGylof1mwIDAQAB"
+}

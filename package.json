@@ -5,8 +5,12 @@
   "description": "Local browser control for agents, with shared sessions and visible activity.",
   "type": "module",
   "packageManager": "pnpm@11.1.1",
-  "engines": { "node": ">=24" },
-  "bin": { "browser-bridge": "dist/cli.js" },
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "browser-bridge": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc && node scripts/build.mjs",
     "check": "tsc --noEmit",
@@ -16,5 +20,14 @@
     "status": "node dist/cli.js status",
     "setup": "node dist/cli.js setup",
     "mcp": "node dist/cli.js mcp"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "playwright-core": "1.64.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
   }
 }

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Browser Bridge</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <header><span class="mark" aria-hidden="true">B</span><div><h1>Browser Bridge</h1><p>Local browser control</p></div></header>
+  <main>
+    <div class="connection"><span id="lamp" aria-hidden="true"></span><p id="connection" role="status">Connecting...</p><button id="refresh" aria-label="Refresh connection">Refresh</button></div>
+    <h2>Agent tabs</h2><div id="tabs"><p class="empty">Reading active tabs...</p></div>
+    <p id="error" role="alert" hidden></p>
+  </main>
+  <footer>Stopping a tab releases it to you.</footer>
+  <script src="popup.js"></script>
+</body></html>
