@@ -215,6 +215,26 @@ export class BrowserController {
       data = (async () => {
         if (url.startsWith('data:image/')) return url;
         if (!/^https?:\/\//.test(url)) return;
+        try {
+          const cached = await tab.page.evaluate(async (url) => {
+            const response = await fetch(url, {
+              cache: 'force-cache',
+              signal: AbortSignal.timeout(1500),
+            });
+            if (!response.ok) return;
+            const blob = await response.blob();
+            if (!blob.type.startsWith('image/') || blob.size > 256 * 1024) return;
+            return new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = () => reject(reader.error);
+              reader.readAsDataURL(blob);
+            });
+          }, url);
+          if (cached) return cached;
+        } catch {
+          // Cross-origin icons may require the browser context's request client.
+        }
         const response = await tab.page.request.get(url, { timeout: 3000, maxRedirects: 4 });
         try {
           const type = response.headers()['content-type']?.split(';')[0];
