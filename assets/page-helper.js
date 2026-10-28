@@ -1,9 +1,10 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 4) return;
+  if (globalThis.__browserBridge?.version === 5) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
   const previousPosition = previous?.position;
+  const previousAttention = previous?.watched === true;
   previous?.release?.();
   const documentId =
     crypto.randomUUID?.() ??
@@ -11,14 +12,18 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 4,
+    version: 5,
     documentId,
     refs: new Map(),
     sequence: 0,
     owner: null,
+    watched: previousAttention,
     position: previousPosition ?? { x: 24, y: 24 },
   };
   const ids = new WeakMap();
+  const waits = new Set();
+  const movementMs = 500;
+  const actionPauseMs = 150;
   let host, cursor, icon, observer;
   const originals = new Map();
   const pointerPath =
@@ -114,15 +119,38 @@
     badge();
     return true;
   };
-  state.move = (x, y, click = false) => {
+  state.setAttention = (watched) => {
+    state.watched = !!watched;
+    if (!state.watched) {
+      if (cursor) cursor.style.transition = 'none';
+      for (const finish of [...waits]) finish();
+    }
+  };
+  const wait = (ms) => {
+    if (!state.owner || !state.watched || !ms) return;
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        waits.delete(finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, ms);
+      waits.add(finish);
+    });
+  };
+  state.pause = () => wait(actionPauseMs);
+  state.move = async (x, y, click = false) => {
     if (!state.owner) return;
+    const changed = state.position.x !== x || state.position.y !== y;
     state.position = { x, y };
     visual();
-    cursor.style.transition = matchMedia('(prefers-reduced-motion: reduce)').matches
-      ? 'none'
-      : 'transform 100ms ease-out';
+    const animate = state.watched && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    cursor.style.transition = animate
+      ? `transform ${movementMs}ms cubic-bezier(.22,.61,.36,1)`
+      : 'none';
     cursor.style.transform = `translate3d(${x}px,${y}px,0)`;
-    if (click) {
+    if (animate && changed) await wait(movementMs);
+    if (click && cursor && state.owner && state.watched) {
       const pulse = cursor.querySelector('.pulse');
       pulse.getAnimations().forEach((animation) => animation.cancel());
       if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
@@ -141,6 +169,7 @@
   state.release = (expectedKey) => {
     if (expectedKey && state.ownerKey !== expectedKey) return;
     state.owner = null;
+    state.setAttention(false);
     observer?.disconnect();
     observer = null;
     const controlIcon = icon;

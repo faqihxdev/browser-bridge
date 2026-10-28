@@ -208,6 +208,10 @@ export class BrowserController {
         ).__browserBridge.claim(label, key, position),
       { label: owner.label, key: owner.id, position: tab.pointer },
     );
+    // Page focus is emulated for background input; ask the verified extension for real focus.
+    await this.extension({ namespace: 'browserBridge', method: 'syncAttention' }).catch(
+      () => undefined,
+    );
     if (!metadata.faviconUrl) return;
     const url = metadata.faviconUrl;
     let data = this.favicons.get(url);
@@ -320,7 +324,7 @@ export class BrowserController {
         ({ x, y, click }) =>
           (
             globalThis as unknown as {
-              __browserBridge?: { move(x: number, y: number, click: boolean): void };
+              __browserBridge?: { move(x: number, y: number, click: boolean): Promise<void> };
             }
           ).__browserBridge?.move(x, y, click),
         { x, y, click },
@@ -538,12 +542,16 @@ export class BrowserController {
           this.config.navigationTimeoutMs,
           'Page evaluation',
         );
-      if (op === 'cdp')
-        return deadline(
+      if (op === 'cdp') {
+        const result = await deadline(
           tab.cdp.send(text(args.method, 'method') as never, (args.params ?? {}) as never),
           30_000,
           'CDP command',
         );
+        if (args.method === 'Input.insertText' || args.method === 'Input.dispatchKeyEvent')
+          await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
+        return result;
+      }
       if (op === 'console') return tab.console;
       if (op === 'network') {
         if (args.index === undefined)
@@ -612,10 +620,12 @@ export class BrowserController {
       }
       if (op === 'key') {
         await page.keyboard.press(text(args.key, 'key'));
+        await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
         return true;
       }
       if (op === 'scroll') {
         await page.mouse.wheel(number(args.deltaX, 0), number(args.deltaY, 600));
+        await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
         return true;
       }
       if (op === 'wait') {
@@ -653,6 +663,7 @@ export class BrowserController {
           await page.mouse.move(x, y);
           await page.mouse.up();
         } else throw new Error('Coordinate actions: click, move, down, up.');
+        await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
         return true;
       }
       const element = await this.element(tab, args);
@@ -726,6 +737,7 @@ export class BrowserController {
           default:
             throw new Error(`Unknown action: ${action}`);
         }
+        await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
         return { action, url: page.url() };
       } finally {
         await element.dispose();

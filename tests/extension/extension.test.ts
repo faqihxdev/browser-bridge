@@ -155,6 +155,21 @@ test(
       };
       const { tabId } = JSON.parse(page.content[0]!.text);
       await waitForFavicon(worker, url, true);
+      const controlled = context.pages().find((page) => page.url() === url)!;
+      await controlled.waitForFunction('globalThis.__browserBridge?.watched === true');
+      await popup.bringToFront();
+      await controlled.waitForFunction('globalThis.__browserBridge?.watched === false');
+      assert.equal(
+        await controlled.evaluate('document.hasFocus()'),
+        true,
+        'Real attention is independent of emulated page focus',
+      );
+      await controlled.bringToFront();
+      await controlled.waitForFunction('globalThis.__browserBridge?.watched === true');
+      await popup.bringToFront();
+      await controlled.bringToFront();
+      await popup.bringToFront();
+      await controlled.waitForFunction('globalThis.__browserBridge?.watched === false');
       await popup.locator('#refresh').click();
       await popup.getByRole('button', { name: /^Stop / }).waitFor();
       await popup.getByRole('button', { name: /^Stop / }).click();

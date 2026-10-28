@@ -187,6 +187,57 @@ test(
           }
         },
       );
+      await t.test(
+        'watched actions wait for movement, cancel on blur and respect Stop',
+        async () => {
+          const observer = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, {
+            noDefaults: true,
+          });
+          try {
+            const page = observer
+              .contexts()[0]!
+              .pages()
+              .find((page) => page.url() === url + '/')!;
+            await page.evaluate('globalThis.__browserBridge.setAttention(true)');
+            await page.evaluate(
+              'document.querySelector("#save").onclick = () => globalThis.clickedAt = performance.now()',
+            );
+            const started = (await page.evaluate('performance.now()')) as number;
+            await call('act', { action: 'click', selector: '#save' });
+            const clickedAt = (await page.evaluate('globalThis.clickedAt')) as number;
+            assert.ok(clickedAt - started >= 450, 'Input waits for visible cursor travel');
+            assert.ok(
+              ((await page.evaluate('performance.now()')) as number) - clickedAt >= 125,
+              'A watched action includes a short result pause',
+            );
+
+            const moving = call('act', { action: 'move', x: 130, y: 150 });
+            await page.waitForFunction('globalThis.__browserBridge.position.x === 130');
+            await page.evaluate('globalThis.__browserBridge.setAttention(false)');
+            await moving;
+            const fastStart = performance.now();
+            await call('act', { action: 'move', x: 140, y: 160 });
+            assert.ok(performance.now() - fastStart < 450, 'Background input has no movement wait');
+
+            await page.evaluate(
+              'globalThis.__browserBridge.setAttention(true); globalThis.clickedAt = null',
+            );
+            const stopped = call('act', { action: 'click', selector: '#save' });
+            const rejected = assert.rejects(stopped, /released|transferred/);
+            await page.waitForFunction('globalThis.__browserBridge.position.x !== 140');
+            await controller.execute(human, 'release', { tabId });
+            await rejected;
+            assert.equal(
+              await page.evaluate('globalThis.clickedAt'),
+              null,
+              'Stop during movement prevents the click',
+            );
+            await call('claim');
+          } finally {
+            await observer.close();
+          }
+        },
+      );
       await t.test('tab ownership blocks another agent', async () => {
         await assert.rejects(
           controller.execute(second, 'act', { tabId, action: 'click', selector: '#save' }),

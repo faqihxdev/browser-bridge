@@ -1,4 +1,38 @@
 let port;
+let attentionGeneration = 0;
+let attentionTab;
+let attentionQueue = Promise.resolve();
+function syncAttention() {
+  const generation = ++attentionGeneration;
+  attentionQueue = attentionQueue
+    .catch(() => undefined)
+    .then(async () => {
+      if (generation !== attentionGeneration) return;
+      const windows = await chrome.windows.getAll({ populate: true });
+      if (generation !== attentionGeneration) return;
+      const window = windows.find((window) => window.focused && window.state !== 'minimized');
+      const current = window?.tabs?.find((tab) => tab.active)?.id;
+      const previous = attentionTab;
+      attentionTab = current;
+      await Promise.all(
+        [...new Set([previous, current])].filter(Number.isInteger).map((tabId) =>
+          chrome.scripting
+            .executeScript({
+              target: { tabId },
+              world: 'MAIN',
+              func: (watched) => globalThis.__browserBridge?.setAttention?.(watched),
+              args: [tabId === current],
+            })
+            .catch(() => undefined),
+        ),
+      );
+    });
+  return attentionQueue;
+}
+chrome.tabs.onActivated.addListener(() => void syncAttention());
+chrome.tabs.onAttached.addListener(() => void syncAttention());
+chrome.tabs.onRemoved.addListener(() => void syncAttention());
+chrome.windows.onFocusChanged.addListener(() => void syncAttention());
 const profile = chrome.storage.local.get('browserBridgeProfileId').then(async (stored) => {
   if (typeof stored.browserBridgeProfileId === 'string') return stored.browserBridgeProfileId;
   const id = crypto.randomUUID();
@@ -41,6 +75,7 @@ function connect() {
       try {
         if (port !== connectedPort) return;
         await request('extension-register', { connectionId, profileId: await profile });
+        await syncAttention();
         connectionError = '';
         await chrome.action.setBadgeText({ text: '' });
       } catch (error) {
@@ -50,6 +85,7 @@ function connect() {
       return;
     }
     if (packet.event === 'state') {
+      void syncAttention();
       void chrome.runtime
         .sendMessage({ event: 'state', result: packet.args })
         .catch(() => undefined);
@@ -58,6 +94,11 @@ function connect() {
     if (packet.event === 'browser-api') {
       try {
         const { namespace, method, args = [] } = packet.args;
+        if (namespace === 'browserBridge' && method === 'syncAttention') {
+          await syncAttention();
+          await request('extension-result', { requestId: packet.id, result: true });
+          return;
+        }
         if (!namespaces.has(namespace) || !/^[a-zA-Z][\w.]*$/.test(method) || !Array.isArray(args))
           throw new Error('Unsupported browser API request.');
         const parts = method.split('.');
