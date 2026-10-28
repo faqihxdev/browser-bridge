@@ -18,6 +18,13 @@ test(
   { timeout: 120_000 },
   async (t) => {
     const server = createServer((request, response) => {
+      if (request.url === '/original.svg' || request.url === '/other.ico') {
+        response.setHeader('Content-Type', 'image/svg+xml');
+        response.end(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#2674d9"/></svg>',
+        );
+        return;
+      }
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
       response.end(
         `<!doctype html><html><head><link rel="icon" href="/original.svg"><link rel="shortcut icon" href="/other.ico"><title>Bridge fixture</title></head><body><h1>Browser Bridge verification</h1><label>Name <input id="name"></label><input type="password" value="private-value"><button id="save" onclick="document.querySelector('#result').textContent=document.querySelector('#name').value">Save</button><p id="result"></p><input id="file" type="file"><a href="/next">Next</a><iframe srcdoc="<button>Frame button</button>"></iframe></body></html>`,
@@ -60,6 +67,29 @@ test(
           assert.equal(JSON.stringify(snapshot).includes('private-value'), false);
         },
       );
+      await t.test('claim shows the cursor before any pointer action', async () => {
+        const { root } = (await call('cdp', {
+          method: 'DOM.getDocument',
+          params: { depth: -1, pierce: true },
+        })) as { root: any };
+        const find = (node: any): number | undefined => {
+          const attributes: string[] = node.attributes ?? [];
+          for (let index = 0; index < attributes.length; index += 2)
+            if (attributes[index] === 'class' && attributes[index + 1] === 'cursor')
+              return node.nodeId;
+          for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
+            const found = find(child);
+            if (found) return found;
+          }
+        };
+        const nodeId = find(root);
+        assert.ok(nodeId, 'The owned cursor is mounted');
+        const { model } = (await call('cdp', {
+          method: 'DOM.getBoxModel',
+          params: { nodeId },
+        })) as { model: { width: number; height: number } };
+        assert.ok(model.width > 0 && model.height > 0, 'The cursor has a visible layout box');
+      });
       await t.test('real input and batches change application state', async () => {
         const results = (await call('batch', {
           actions: [
@@ -120,18 +150,37 @@ test(
             assert.equal(await pointerStyle(), before);
             await call('act', { action: 'move', x: 90, y: 110 });
             assert.notEqual(await pointerStyle(), before);
-            const opacity = await page
-              .locator('link[rel="icon"]')
+            const position = await pointerStyle();
+            await call('snapshot');
+            assert.equal(
+              await pointerStyle(),
+              position,
+              'Reading keeps the cursor at its last position',
+            );
+            assert.ok(
+              !position.includes('display: none'),
+              'The owned cursor stays visible between actions',
+            );
+            await page.locator('link[data-browser-bridge-icon]').waitFor({ state: 'attached' });
+            const composite = await page
+              .locator('link[data-browser-bridge-icon]')
               .first()
               .evaluate((link) => {
                 const svg = decodeURIComponent(link.getAttribute('href')!.split(',')[1]!);
-                return Number(
-                  new DOMParser()
-                    .parseFromString(svg, 'image/svg+xml')
-                    .documentElement.getAttribute('opacity'),
-                );
+                const root = new DOMParser().parseFromString(svg, 'image/svg+xml');
+                return {
+                  siteOpacity: Number(root.querySelector('image')?.getAttribute('opacity')),
+                  siteImage: root.querySelector('image')?.getAttribute('href'),
+                  cursorFill: root.querySelector('path')?.getAttribute('fill'),
+                  cursorOutline: root.querySelector('path')?.getAttribute('stroke'),
+                  cursorOpacity: root.querySelector('path')?.getAttribute('opacity'),
+                };
               });
-            assert.ok(opacity > 0 && opacity < 1, 'Controlled favicon is translucent');
+            assert.ok(composite.siteOpacity > 0 && composite.siteOpacity < 1);
+            assert.ok(composite.siteImage?.startsWith('data:image/'), 'The site icon is embedded');
+            assert.equal(composite.cursorFill, '#fff');
+            assert.equal(composite.cursorOutline, '#000');
+            assert.equal(composite.cursorOpacity, null, 'The cursor has full opacity');
             await cdp.detach();
           } finally {
             await observer.close();
@@ -192,7 +241,14 @@ test(
         await assert.rejects(queued, /released/);
       });
       await t.test('navigation invalidates old refs', async () => {
+        const before = await call('evaluate', {
+          expression: 'globalThis.__browserBridge.position',
+        });
         await call('navigate', { url: url + '/next' });
+        const position = await call('evaluate', {
+          expression: 'globalThis.__browserBridge.position',
+        });
+        assert.deepEqual(position, before, 'Navigation preserves the last agent pointer position');
         await assert.rejects(
           call('act', { action: 'fill', ref: nameRef!, text: 'stale' }),
           /Stale reference/,

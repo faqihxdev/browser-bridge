@@ -13,4 +13,4 @@
 
 2026-10-29
 
-- The cursor follows agent actions only. Use a white arrow with a black outline and a translucent cursor favicon only while the tab is owned.
+- Keep the rounded, stemless cursor visible throughout ownership, following agent actions only. Use a white fill and black outline. Overlay it at full opacity on the faded site favicon; release restores the site icon.

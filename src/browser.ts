@@ -34,6 +34,7 @@ interface Tab {
   network: { index: number; request: Request }[];
   requestSequence: number;
   dialog?: import('playwright-core').Dialog;
+  pointer?: { x: number; y: number };
 }
 const helper = readFile(new URL('../assets/page-helper.js', import.meta.url), 'utf8');
 const text = (value: unknown, name: string): string => {
@@ -51,6 +52,7 @@ export class BrowserController {
   private tabs = new Map<string, Tab>();
   private attaching = new Map<Page, Promise<Tab>>();
   private global = new Queue();
+  private favicons = new Map<string, Promise<string | undefined>>();
   private desktop = new Desktop();
   constructor(
     private config: Config,
@@ -188,13 +190,63 @@ export class BrowserController {
     if (!owner) return;
     await tab.page.evaluate(await helper);
     if (tab.owner?.id !== owner.id) return;
-    await tab.page.evaluate(
-      ({ label, key }) =>
+    const metadata = await tab.page.evaluate(
+      ({ label, key, position }) =>
         (
-          globalThis as unknown as { __browserBridge: { claim(label: string, key: string): void } }
-        ).__browserBridge.claim(label, key),
-      { label: owner.label, key: owner.id },
+          globalThis as unknown as {
+            __browserBridge: {
+              claim(
+                label: string,
+                key: string,
+                position?: { x: number; y: number },
+              ): {
+                documentId: string;
+                faviconUrl: string | null;
+              };
+            };
+          }
+        ).__browserBridge.claim(label, key, position),
+      { label: owner.label, key: owner.id, position: tab.pointer },
     );
+    if (!metadata.faviconUrl) return;
+    const url = metadata.faviconUrl;
+    let data = this.favicons.get(url);
+    if (!data) {
+      data = (async () => {
+        if (url.startsWith('data:image/')) return url;
+        if (!/^https?:\/\//.test(url)) return;
+        const response = await tab.page.request.get(url, { timeout: 3000, maxRedirects: 4 });
+        try {
+          const type = response.headers()['content-type']?.split(';')[0];
+          if (!response.ok() || !type?.startsWith('image/')) return;
+          if (Number(response.headers()['content-length']) > 256 * 1024) return;
+          const bytes = await response.body();
+          if (bytes.length > 256 * 1024) return;
+          return `data:${type};base64,${bytes.toString('base64')}`;
+        } finally {
+          await response.dispose();
+        }
+      })().catch(() => undefined);
+      this.favicons.set(url, data);
+      if (this.favicons.size > 64) this.favicons.delete(this.favicons.keys().next().value!);
+    }
+    // Icon loading must not block input. Guard the document and owner before applying it.
+    void data
+      .then(async (data) => {
+        if (!data || tab.owner?.id !== owner.id || tab.page.isClosed()) return;
+        await tab.page.evaluate(
+          ({ data, key, documentId, source }) =>
+            (
+              globalThis as unknown as {
+                __browserBridge?: {
+                  setIcon(data: string, key: string, documentId: string, source: string): void;
+                };
+              }
+            ).__browserBridge?.setIcon(data, key, documentId, source),
+          { data, key: owner.id, documentId: metadata.documentId, source: url },
+        );
+      })
+      .catch(() => undefined);
   }
   private async claim(session: Session, tab: Tab): Promise<number> {
     this.ensure(session);
@@ -242,6 +294,7 @@ export class BrowserController {
         .catch(() => undefined);
   }
   private async move(tab: Tab, x: number, y: number, click = false): Promise<void> {
+    tab.pointer = { x, y };
     await tab.page
       .evaluate(
         ({ x, y, click }) =>

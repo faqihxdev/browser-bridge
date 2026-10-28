@@ -17,7 +17,7 @@ A shared Node.js 24 manager routes MCP agents to persistent Playwright/CDP contr
 | Browser routing  | Local discovery, names and aliases, independent selection per agent and a persistent controller per browser. Browser-qualified tab IDs retain their original destination. |
 | Fast actions     | Ordered batches reduce agent round trips. Targeted snapshots and bounded request history keep responses small. Indicators add no fixed input delay.                       |
 | Tab ownership    | One agent per tab. Release and disconnect restore indicators. Human stop invalidates queued work and active batches.                                                      |
-| Visible activity | Agent-only cursor overlay, click feedback and a faded cursor favicon while owned. Release restores the site icon. Screenshots hide the cursor by default.                 |
+| Visible activity | Persistent agent cursor, click feedback and a cursor over the faded site favicon while owned. Release restores the site icon. Screenshots hide the cursor by default.     |
 | Broad access     | Page actions, JavaScript, raw page/browser CDP, cookies, network details, screenshots, PDFs, uploads and extension browser APIs.                                          |
 | Native Windows   | UI inspection, invocation, values, menus, keyboard/mouse input and window screenshots through a persistent helper.                                                        |
 | Verification     | Real-browser tests cover input, ownership, cancellation, navigation, favicon restoration, independent MCP clients and two simultaneous extension/native-host connections. |

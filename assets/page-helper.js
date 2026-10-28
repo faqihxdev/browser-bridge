@@ -1,22 +1,31 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 3) return;
+  if (globalThis.__browserBridge?.version === 4) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
+  const previousPosition = previous?.position;
   previous?.release?.();
   const documentId =
     crypto.randomUUID?.() ??
     [...crypto.getRandomValues(new Uint8Array(16))]
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
-  const state = { version: 3, documentId, refs: new Map(), sequence: 0, owner: null };
+  const state = {
+    version: 4,
+    documentId,
+    refs: new Map(),
+    sequence: 0,
+    owner: null,
+    position: previousPosition ?? { x: 24, y: 24 },
+  };
   const ids = new WeakMap();
-  let host, cursor, label, icon, observer;
+  let host, cursor, icon, observer;
   const originals = new Map();
+  const pointerPath =
+    '<path d="M4.1 2.8 21 9.7Q22.4 10.3 20.9 10.9L14.1 13.6Q13.7 13.7 13.6 14.1L10.9 20.9Q10.3 22.4 9.7 21L2.8 4.1Q2 2 4.1 2.8Z" fill="#fff" stroke="#000" stroke-width="1.6" stroke-linejoin="round"/>';
   const pointerSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32"><path d="M3 2v24l6-7 5 11 4-2-5-10h10Z" fill="#fff" stroke="#000" stroke-width="1.75" stroke-linejoin="round"/></svg>';
-  const iconHref =
-    'data:image/svg+xml,' + encodeURIComponent(pointerSvg.replace('<svg ', '<svg opacity="0.55" '));
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' + pointerPath + '</svg>';
+  let iconHref, iconSource;
   function visual() {
     if (host?.isConnected) return;
     host = document.createElement('div');
@@ -26,37 +35,51 @@
     const root = host.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
     style.textContent =
-      ':host{pointer-events:none} .cursor{position:absolute;left:0;top:0;display:none;width:19px;height:25px;will-change:transform} .pointer,.pointer svg{display:block;width:100%;height:100%} .label{position:absolute;left:21px;top:18px;white-space:nowrap;background:#171717;color:#ddd;border:1px solid #3a3a3a;border-radius:4px;padding:2px 5px;font:11px/1.4 "Segoe UI",sans-serif} .pulse{position:absolute;inset:-8px;border:1px solid #aaa;border-radius:50%;opacity:0} @media(prefers-reduced-motion:reduce){.pulse{animation:none!important}}';
+      ':host{pointer-events:none} .cursor{position:absolute;left:0;top:0;width:22px;height:22px;will-change:transform} .pointer,.pointer svg{display:block;width:100%;height:100%} .pulse{position:absolute;inset:-8px;border:1px solid #aaa;border-radius:50%;opacity:0} @media(prefers-reduced-motion:reduce){.pulse{animation:none!important}}';
     cursor = document.createElement('div');
     cursor.className = 'cursor';
+    cursor.style.transform = `translate3d(${state.position.x}px,${state.position.y}px,0)`;
     const arrow = document.createElement('div');
     arrow.className = 'pointer';
     arrow.innerHTML = pointerSvg;
-    label = document.createElement('span');
-    label.className = 'label';
     const pulse = document.createElement('div');
     pulse.className = 'pulse';
-    cursor.append(pulse, arrow, label);
+    cursor.append(pulse, arrow);
     root.append(style, cursor);
     document.documentElement.append(host);
+  }
+  function faviconUrl() {
+    const href = [...originals.values()].findLast((original) => original.href)?.href;
+    try {
+      return new URL(href || '/favicon.ico', document.baseURI).href;
+    } catch {
+      return null;
+    }
   }
   function badge() {
     if (!state.owner) return;
     observer?.disconnect();
     for (const link of document.querySelectorAll('link[rel~="icon"]')) {
       if (link === icon) continue;
-      if (!originals.has(link)) originals.set(link, link.getAttribute('href'));
-      else if (link.getAttribute('href') !== iconHref)
-        originals.set(link, link.getAttribute('href'));
-      if (link.getAttribute('href') !== iconHref) link.setAttribute('href', iconHref);
+      const href = link.getAttribute('href');
+      let original = originals.get(link);
+      if (!original || href !== original.appliedHref) {
+        original = { href, appliedHref: href };
+        originals.set(link, original);
+      }
+      if (iconHref && href !== iconHref) {
+        original.appliedHref = iconHref;
+        link.setAttribute('href', iconHref);
+      }
     }
-    if (!icon?.isConnected) {
+    if (iconHref && !icon?.isConnected) {
       icon = document.createElement('link');
       icon.rel = 'icon';
-      icon.href = iconHref;
       icon.type = 'image/svg+xml';
+      icon.dataset.browserBridgeIcon = '';
       (document.head || document.documentElement).append(icon);
     }
+    if (icon && icon.getAttribute('href') !== iconHref) icon.href = iconHref;
     observer ??= new MutationObserver(badge);
     observer.observe(document.head || document.documentElement, {
       subtree: true,
@@ -65,21 +88,39 @@
       attributeFilter: ['href', 'rel'],
     });
   }
-  state.claim = (owner, key) => {
+  state.claim = (owner, key, position) => {
     state.owner = owner;
     state.ownerKey = key;
+    if (position) state.position = position;
     visual();
-    label.textContent = owner;
     badge();
+    return { documentId, faviconUrl: faviconUrl() };
+  };
+  state.setIcon = (data, key, expectedDocumentId, source) => {
+    if (!state.owner || state.ownerKey !== key || documentId !== expectedDocumentId) return false;
+    if (source !== faviconUrl() || !data?.startsWith('data:image/')) return false;
+    iconSource = source;
+    iconHref =
+      'data:image/svg+xml,' +
+      encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
+          '<image width="32" height="32" opacity="0.55" href="' +
+          data.replaceAll('&', '&amp;').replaceAll('"', '&quot;') +
+          '"/>' +
+          '<g transform="translate(11 11) scale(.9)">' +
+          pointerPath +
+          '</g></svg>',
+      );
+    badge();
+    return true;
   };
   state.move = (x, y, click = false) => {
-    if (!state.owner || document.visibilityState !== 'visible') return;
+    if (!state.owner) return;
+    state.position = { x, y };
     visual();
-    cursor.style.display = 'block';
-    cursor.style.transition =
-      click || matchMedia('(prefers-reduced-motion: reduce)').matches
-        ? 'none'
-        : 'transform 70ms linear';
+    cursor.style.transition = matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'none'
+      : 'transform 100ms ease-out';
     cursor.style.transform = `translate3d(${x}px,${y}px,0)`;
     if (click) {
       const pulse = cursor.querySelector('.pulse');
@@ -102,14 +143,31 @@
     state.owner = null;
     observer?.disconnect();
     observer = null;
-    for (const [link, original] of originals)
-      if (link.getAttribute('href') === iconHref) {
-        if (original === null) link.removeAttribute('href');
-        else link.setAttribute('href', original);
-      }
-    originals.clear();
-    icon?.remove();
+    const controlIcon = icon;
+    controlIcon?.remove();
     icon = null;
+    let restored;
+    for (const [link, original] of originals)
+      if (link.getAttribute('href') === original.appliedHref) {
+        if (original.href === null) link.removeAttribute('href');
+        else link.setAttribute('href', original.href);
+        if (link.isConnected) restored = link;
+      }
+    // Reinsert after removing the control icon so Chromium invalidates its cached selection.
+    if (restored) {
+      const parent = restored.parentNode;
+      const next = restored.nextSibling;
+      restored.remove();
+      parent.insertBefore(restored, next);
+    } else if (controlIcon && iconSource) {
+      controlIcon.removeAttribute('data-browser-bridge-icon');
+      controlIcon.removeAttribute('type');
+      controlIcon.href = iconSource;
+      (document.head || document.documentElement).append(controlIcon);
+    }
+    originals.clear();
+    iconHref = null;
+    iconSource = null;
     host?.remove();
     host = null;
     cursor = null;

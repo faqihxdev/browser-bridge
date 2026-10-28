@@ -3,9 +3,43 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { chromium, type BrowserContext } from 'playwright-core';
+import { createServer } from 'node:http';
+import { chromium, type BrowserContext, type Worker } from 'playwright-core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+async function waitForFavicon(worker: Worker, url: string, controlled: boolean): Promise<string> {
+  // Keep this browser-side function outside tsx's named-function instrumentation.
+  return worker.evaluate(`
+      new Promise((resolve, reject) => {
+        const { url, controlled } = ${JSON.stringify({ url, controlled })};
+        const browser = chrome;
+        const matches = (href) =>
+          controlled
+            ? href?.startsWith('data:image/svg+xml,') &&
+              decodeURIComponent(href).includes('<image ')
+            : href === url + 'favicon.svg';
+        const finish = (href) => {
+          clearTimeout(timer);
+          browser.tabs.onUpdated.removeListener(updated);
+          resolve(href);
+        };
+        const updated = (_id, _change, tab) => {
+          if (tab.url === url && matches(tab.favIconUrl)) finish(tab.favIconUrl);
+        };
+        const timer = setTimeout(() => {
+          browser.tabs.onUpdated.removeListener(updated);
+          reject(
+            new Error('Browser favicon did not become ' + (controlled ? 'controlled' : 'original') + '.'),
+          );
+        }, 8000);
+        browser.tabs.onUpdated.addListener(updated);
+        void browser.tabs.query({}).then((tabs) => {
+          const tab = tabs.find((tab) => tab.url === url);
+          if (matches(tab?.favIconUrl)) finish(tab.favIconUrl);
+        });
+      })`);
+}
 
 function cleanupOnEnd(t: TestContext, client: Client) {
   const contexts: BrowserContext[] = [];
@@ -31,6 +65,22 @@ test(
   'installed MV3 extension reaches its real native host and browser APIs',
   { timeout: 90000 },
   async (t) => {
+    const server = createServer((request, response) => {
+      if (request.url === '/favicon.svg') {
+        response.setHeader('Content-Type', 'image/svg+xml');
+        response.end(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#2674d9"/></svg>',
+        );
+      } else {
+        response.setHeader('Content-Type', 'text/html');
+        response.end(
+          '<!doctype html><link rel="icon" href="/favicon.svg"><title>Favicon fixture</title>Browser Bridge',
+        );
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
     const runtime = await mkdtemp(join(tmpdir(), 'browser-bridge-extension-'));
     const profile = join(runtime, 'profile');
     await writeFile(
@@ -97,14 +147,27 @@ test(
           tab.url.endsWith('/popup.html'),
         ),
       );
-      const page = (await client.callTool({ name: 'browser_open', arguments: {} })) as {
+      const page = (await client.callTool({
+        name: 'browser_open',
+        arguments: { url, focus: true },
+      })) as {
         content: { text: string }[];
       };
       const { tabId } = JSON.parse(page.content[0]!.text);
+      await waitForFavicon(worker, url, true);
       await popup.locator('#refresh').click();
       await popup.getByRole('button', { name: /^Stop / }).waitFor();
       await popup.getByRole('button', { name: /^Stop / }).click();
       await popup.getByText('No active tabs.').waitFor();
+      await waitForFavicon(worker, url, false);
+      const claim = await client.callTool({
+        name: 'browser_page',
+        arguments: { op: 'claim', tabId },
+      });
+      assert.notEqual(claim.isError, true);
+      await waitForFavicon(worker, url, true);
+      await client.close();
+      await waitForFavicon(worker, url, false);
       await mkdir('artifacts', { recursive: true });
       await popup.locator('body').screenshot({ path: 'artifacts/extension-popup.png' });
     } finally {
