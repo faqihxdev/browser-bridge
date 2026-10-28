@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, symlink, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
@@ -9,7 +9,7 @@ import { BrowserManager } from '../src/manager.js';
 import { defaults } from '../src/config.js';
 
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'browser-bridge-discovery-'));
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'browser-bridge-discovery-')));
   const env: DiscoveryEnvironment = {
     platform: 'win32',
     home: root,
