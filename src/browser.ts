@@ -562,8 +562,37 @@ export class BrowserController {
       }
       const element = await this.element(tab, args);
       try {
+        let immediate = false;
         if (['click', 'hover', 'fill', 'type', 'check', 'select'].includes(action)) {
-          await element.scrollIntoViewIfNeeded();
+          const target = await element.evaluate((element) => {
+            let rect = element.getBoundingClientRect();
+            if (
+              rect.top < 0 ||
+              rect.left < 0 ||
+              rect.bottom > innerHeight ||
+              rect.right > innerWidth
+            ) {
+              element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+              rect = element.getBoundingClientRect();
+            }
+            const root = element.getRootNode() as Document | ShadowRoot;
+            const x = rect.x + rect.width / 2,
+              y = rect.y + rect.height / 2;
+            const hit = root.elementFromPoint(x, y);
+            let outer = element;
+            while (outer.getRootNode() instanceof ShadowRoot)
+              outer = (outer.getRootNode() as ShadowRoot).host as typeof element;
+            const documentHit = document.elementFromPoint(x, y);
+            return {
+              hit:
+                (hit === element || (!!hit && element.contains(hit))) &&
+                (documentHit === outer || (!!documentHit && outer.contains(documentHit))),
+              disabled: element.matches(':disabled,[aria-disabled="true"]'),
+            };
+          });
+          if (target.disabled && action !== 'hover') throw new Error('Target element is disabled.');
+          immediate =
+            target.hit && args.stable !== true && (await element.ownerFrame()) === page.mainFrame();
           const box = await element.boundingBox();
           if (box)
             await this.move(tab, box.x + box.width / 2, box.y + box.height / 2, action === 'click');
@@ -572,12 +601,13 @@ export class BrowserController {
         switch (action) {
           case 'click':
             await element.click({
+              force: immediate,
               button: args.button as 'left' | 'right' | 'middle' | undefined,
               clickCount: number(args.clickCount, 1),
             });
             break;
           case 'hover':
-            await element.hover();
+            await element.hover({ force: immediate });
             break;
           case 'fill':
             await element.fill(String(args.text ?? ''));
@@ -589,7 +619,7 @@ export class BrowserController {
             await element.press(text(args.key, 'key'));
             break;
           case 'check':
-            await element.setChecked(args.checked !== false);
+            await element.setChecked(args.checked !== false, { force: immediate });
             break;
           case 'select':
             await element.selectOption(args.values as string | string[]);

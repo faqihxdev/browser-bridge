@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
+import { fileURLToPath } from 'node:url';
 import { connectController } from '../dist/client.js';
 
 const fixture = createServer((request, response) => {
@@ -11,9 +12,10 @@ const fixture = createServer((request, response) => {
   );
 });
 await new Promise((resolve) => fixture.listen(0, '127.0.0.1', resolve));
-const client = await connectController('Bridge verification');
+let client;
 let tabId;
 try {
+  client = await connectController('Bridge verification');
   const opened = await client.call('open', { url: `http://127.0.0.1:${fixture.address().port}` });
   tabId = opened.tabId;
   const samples = { evaluate: [], snapshot: [] };
@@ -45,10 +47,7 @@ try {
   await mkdir('artifacts', { recursive: true });
   await client.call('screenshot', {
     tabId,
-    path: new URL('../artifacts/live-edge-verification.png', import.meta.url).pathname.replace(
-      /^\/([A-Za-z]:)/,
-      '$1',
-    ),
+    path: fileURLToPath(new URL('../artifacts/live-edge-verification.png', import.meta.url)),
   });
   const summary = Object.fromEntries(
     Object.entries(samples).map(([op, values]) => {
@@ -73,7 +72,7 @@ try {
   await writeFile('artifacts/benchmark.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
 } finally {
-  if (tabId) await client.call('close', { tabId }).catch(() => undefined);
-  client.close();
+  if (tabId) await client?.call('close', { tabId }).catch(() => undefined);
+  client?.close();
   fixture.close();
 }

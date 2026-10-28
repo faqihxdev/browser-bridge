@@ -111,6 +111,16 @@ test(
           await controller.execute(second, 'release', { tabId });
         },
       );
+      await t.test('the fast pointer path refuses disabled and covered controls', async () => {
+        await call('evaluate', { expression: 'document.querySelector("#save").disabled = true' });
+        await assert.rejects(call('act', { action: 'click', selector: '#save' }), /disabled/);
+        await call('evaluate', {
+          expression:
+            '(() => { document.querySelector("#save").disabled = false; const cover = document.createElement("div"); cover.id = "cover"; cover.style.cssText = "position:fixed;inset:0;z-index:999999;background:white"; document.body.append(cover); })()',
+        });
+        await assert.rejects(call('act', { action: 'click', selector: '#save' }));
+        await call('evaluate', { expression: 'document.querySelector("#cover").remove()' });
+      });
       await t.test('queued work cannot reclaim a stopped tab', async () => {
         await call('claim');
         const waiting = call('wait', { selector: '#never', timeout: 200 });

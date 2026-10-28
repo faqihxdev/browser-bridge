@@ -42,7 +42,7 @@ export const tools = [
     name: 'browser_act',
     op: 'act',
     description:
-      'Act on an element using ref or a Playwright selector. Actions: click, hover, fill, type, press, check, select, upload. For coordinates use action click/move/down/up and x,y in main-frame CSS pixels. text supplies fill/type text; key supplies a key chord; values supplies select options; paths supplies local upload files. Target a specific frame with frameUrl when using selectors.',
+      'Act on an element using ref or a Playwright selector. Actions: click, hover, fill, type, press, check, select, upload. For coordinates use action click/move/down/up and x,y in main-frame CSS pixels. text supplies fill/type text; key supplies a key chord; values supplies select options; paths supplies local upload files. Target a specific frame with frameUrl when using selectors. Set stable=true to wait for animation stability; default pointer input uses a validated immediate path where available.',
     inputSchema: schema(
       {
         ...target,
@@ -56,6 +56,7 @@ export const tools = [
         y: numeric,
         button: string,
         checked: boolean,
+        stable: boolean,
         clickCount: numeric,
         steps: numeric,
         values: { oneOf: [string, { type: 'array', items: string }] },
