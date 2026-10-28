@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:net';
 import { BrowserRegistry, type DiscoveryEnvironment } from '../src/browsers.js';
+import { BrowserManager } from '../src/manager.js';
 import { defaults } from '../src/config.js';
 
 async function fixture() {
@@ -95,6 +97,8 @@ test('one endpoint has one identity even when configured with HTTP and discovere
   );
   assert.equal((await registry.list()).length, 1);
   assert.equal((await registry.resolve('Edge')).id, 'daily');
+  const legacy = new BrowserRegistry({ ...defaults, browser: 'http://localhost:59005' }, env);
+  assert.equal((await legacy.resolve('Edge')).id, 'default');
   const duplicate = new BrowserRegistry(
     {
       ...defaults,
@@ -107,4 +111,35 @@ test('one endpoint has one identity even when configured with HTTP and discovere
     env,
   );
   await assert.rejects(duplicate.list(), /duplicates another configured instance/);
+});
+
+test('discovery distinguishes a listening browser from its stale endpoint file without attaching', async () => {
+  const { env, profile } = await fixture();
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as { port: number }).port;
+  await profile(join(env.local, 'BraveSoftware', 'Brave-Browser', 'User Data'), port);
+  const manager = new BrowserManager(
+    { ...defaults, browser: 'Brave' },
+    async () => {
+      throw new Error('No extension expected');
+    },
+    new BrowserRegistry(defaults, env),
+  );
+  const session = { id: 'discovery', label: 'Discovery test', role: 'agent', active: true };
+  try {
+    const live = (await manager.execute(session, 'browsers', {})) as {
+      browsers: { endpointFound: boolean; listening: boolean; connected: boolean }[];
+    };
+    assert.equal(live.browsers[0]!.endpointFound, true);
+    assert.equal(live.browsers[0]!.listening, true);
+    assert.equal(live.browsers[0]!.connected, false);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    const stale = (await manager.execute(session, 'browsers', { refresh: false })) as typeof live;
+    assert.equal(stale.browsers[0]!.endpointFound, true);
+    assert.equal(stale.browsers[0]!.listening, false);
+  } finally {
+    server.close();
+    await manager.dispose();
+  }
 });

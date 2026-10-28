@@ -1,11 +1,15 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 1) return;
+  if (globalThis.__browserBridge?.version === 2) return;
+  const previous = globalThis.__browserBridge;
+  const previousOwner = previous?.owner;
+  const previousKey = previous?.ownerKey;
+  previous?.release?.();
   const documentId =
     crypto.randomUUID?.() ??
     [...crypto.getRandomValues(new Uint8Array(16))]
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
-  const state = { version: 1, documentId, refs: new Map(), sequence: 0, owner: null };
+  const state = { version: 2, documentId, refs: new Map(), sequence: 0, owner: null };
   const ids = new WeakMap();
   let host,
     cursor,
@@ -17,7 +21,7 @@
   const iconHref =
     'data:image/svg+xml,' +
     encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#2855ce"/><path d="M9 6v20l5-6 4 8 4-2-4-8h8z" fill="white"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#171717"/><path d="M9 6v20l5-6 4 8 4-2-4-8h8z" fill="#e5e5e5"/></svg>',
     );
   function visual() {
     if (host?.isConnected) return;
@@ -28,7 +32,7 @@
     const root = host.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
     style.textContent =
-      ':host{pointer-events:none} .cursor{position:absolute;left:0;top:0;display:none;width:23px;height:29px;filter:drop-shadow(0 1px 2px #0008);will-change:transform} .pointer{width:100%;height:100%;background:#2855ce;clip-path:polygon(0 0,0 94%,28% 68%,49% 100%,66% 90%,46% 60%,88% 60%)} .label{position:absolute;left:25px;top:22px;white-space:nowrap;background:#2855ce;color:#fff;border-radius:5px;padding:3px 7px;font:12px/1.4 "Segoe UI",sans-serif} .pulse{position:absolute;inset:-10px;border:2px solid #2855ce;border-radius:50%;opacity:0} @keyframes pulse{0%{opacity:.8;transform:scale(.5)}100%{opacity:0;transform:scale(1.4)}} @media(prefers-reduced-motion:reduce){.pulse{animation:none!important}}';
+      ':host{pointer-events:none} .cursor{position:absolute;left:0;top:0;display:none;width:19px;height:24px;filter:drop-shadow(0 1px 1px #000c);will-change:transform} .pointer{width:100%;height:100%;background:#e5e5e5;clip-path:polygon(0 0,0 94%,28% 68%,49% 100%,66% 90%,46% 60%,88% 60%)} .label{position:absolute;left:21px;top:18px;white-space:nowrap;background:#171717;color:#ddd;border:1px solid #3a3a3a;border-radius:4px;padding:2px 5px;font:11px/1.4 "Segoe UI",sans-serif} .pulse{position:absolute;inset:-8px;border:1px solid #aaa;border-radius:50%;opacity:0} @keyframes pulse{0%{opacity:.8;transform:scale(.5)}100%{opacity:0;transform:scale(1.4)}} @media(prefers-reduced-motion:reduce){.pulse{animation:none!important}}';
     cursor = document.createElement('div');
     cursor.className = 'cursor';
     const arrow = document.createElement('div');
@@ -192,4 +196,5 @@
     { passive: true },
   );
   globalThis.__browserBridge = state;
+  if (previousOwner) state.claim(previousOwner, previousKey);
 })();

@@ -24,7 +24,7 @@ export const tools = [
     name: 'browser_list',
     op: 'browsers',
     description:
-      'Discover installed and configured Chromium browsers without attaching or changing focus. Returns stable IDs, names, debugging setup URLs and verified extension state. Set refresh=true after enabling debugging. Browser names must be unambiguous.',
+      'Discover installed and configured Chromium browsers without attaching or changing focus. Returns stable IDs, names, endpointFound, listening, setup URLs and verified extension state. listening checks the endpoint TCP port without requesting debugging permission. Discovery refreshes by default. Browser names must be unambiguous.',
     inputSchema: schema({ refresh: boolean }),
   },
   {

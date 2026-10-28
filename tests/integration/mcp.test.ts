@@ -145,6 +145,7 @@ test(
       const snapshot = json(
         await first.callTool({ name: 'browser_snapshot', arguments: { tabId } }),
       );
+      assert.equal(snapshot.tabId, tabId);
       assert.ok(snapshot.frames[0]?.elements, JSON.stringify(snapshot));
       const ref = snapshot.frames[0].elements[0].ref;
       json(

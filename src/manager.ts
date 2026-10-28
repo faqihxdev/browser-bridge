@@ -1,5 +1,5 @@
 import { BrowserController, type Session } from './browser.js';
-import { BrowserRegistry, type BrowserTarget } from './browsers.js';
+import { BrowserRegistry, endpointListening, type BrowserTarget } from './browsers.js';
 import { Queue, type Config } from './config.js';
 import { Desktop } from './desktop.js';
 import type { Data } from './wire.js';
@@ -79,7 +79,8 @@ export class BrowserManager {
     const connected = instance.controller.status().connected;
     if (!connected && !connect) return [];
     const version = `${this.extensionVersion}/${instance.controller.connectionVersion}`;
-    if (connected && instance.binding?.version === version) return instance.binding.ids;
+    if (connected && instance.binding?.version === version && instance.binding.ids.length)
+      return instance.binding.ids;
     const candidates = this.extensions.size ? await instance.controller.extensionConnections() : [];
     const ids = [...new Set(candidates)].filter((id) => this.extensions.has(id));
     instance.binding = {
@@ -136,7 +137,7 @@ export class BrowserManager {
         browserId: target.id,
       }));
     if (
-      ['open', 'claim', 'release', 'close'].includes(op) &&
+      ['open', 'claim', 'release', 'close', 'snapshot'].includes(op) &&
       result &&
       typeof result === 'object'
     ) {
@@ -192,7 +193,7 @@ export class BrowserManager {
         userDataDir: target.userDataDir,
         installed: target.installed,
         configured: target.configured,
-        debuggingEnabled: !!target.endpoint,
+        endpointFound: !!target.endpoint,
         setupUrl: target.setupUrl,
         connected: instance?.controller.status().connected ?? false,
         extensionConnected: !!instance?.binding?.ids.length,
@@ -201,9 +202,18 @@ export class BrowserManager {
     });
     return {
       browser: this.config.browser,
-      selectedBrowserId: session ? (this.selected.get(session.id) ?? null) : null,
+      selectedBrowserId:
+        session && session.role !== 'extension'
+          ? (this.selected.get(session.id) ??
+            (await this.registry
+              .resolve()
+              .then((target) => target.id)
+              .catch(() => null)))
+          : null,
       connected: visible.some((instance) => instance.controller.status().connected),
       extensionConnected: session?.role === 'extension' ? !!identity : this.extensions.size > 0,
+      registeredExtensions:
+        session?.role === 'extension' ? (identity ? 1 : 0) : this.extensions.size,
       claims,
       ...(session?.role === 'extension' ? {} : { browsers }),
     };
@@ -215,8 +225,15 @@ export class BrowserManager {
     if (op === 'extension-register') return this.registerExtension(session, args);
     if (op === 'status') return this.status(session);
     if (op === 'browsers') {
-      const status = await this.status(session, args.refresh === true);
-      return { selectedBrowserId: status.selectedBrowserId, browsers: status.browsers };
+      const status = await this.status(session, args.refresh !== false);
+      const targets = await this.registry.list();
+      const browsers = await Promise.all(
+        (status.browsers as Data[]).map(async (browser) => {
+          const endpoint = targets.find((target) => target.id === browser.id)?.endpoint;
+          return { ...browser, listening: endpoint ? await endpointListening(endpoint) : false };
+        }),
+      );
+      return { selectedBrowserId: status.selectedBrowserId, browsers };
     }
     if (op === 'select') {
       if (typeof args.browser !== 'string' || !args.browser.trim())

@@ -1,26 +1,26 @@
 # Browser Bridge
 
-Let local MCP agents control your existing browser, with visible activity and shared tab ownership.
+Control your existing browsers from any local MCP agent, with visible activity and shared tab ownership.
 
 [Checks](https://github.com/faqihxdev/browser-bridge/actions/workflows/checks.yml)
 
 ## Architecture
 
-Node.js 24, TypeScript and Playwright attach to your signed-in Chromium browser through CDP. A shared controller serves agents over an authenticated local named pipe. The MV3 extension supplies browser APIs and a status/stop popup through Native Messaging. A persistent Windows UI Automation helper handles native controls.
+A shared Node.js 24 manager routes MCP agents to persistent Playwright/CDP controllers, one per browser. Authenticated local pipes connect stdio adapters and Native Messaging hosts. The MV3 extension supplies browser APIs and a compact status/stop popup. Its live connection identity is verified inside the selected browser before API routing. Windows UI Automation handles native controls.
 
 ![Browser Bridge architecture](docs/images/architecture.svg)
 
 ## Engineering highlights
 
-| Capability       | Implementation                                                                                                                                                           |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Shared control   | One on-demand controller, persistent browser connection, explicit tab IDs and independent queues per tab.                                                                |
-| Fast actions     | Ordered batches reduce agent round trips. Targeted snapshots and bounded request history keep responses small. Indicators add no fixed input delay.                      |
-| Tab ownership    | One agent per tab. Release and disconnect restore indicators. Human stop invalidates queued work and active batches.                                                     |
-| Visible activity | Non-intercepting cursor overlay, click feedback and temporary favicons. Original icon attributes survive release and navigation. Screenshots hide the cursor by default. |
-| Broad access     | Page actions, JavaScript, raw page/browser CDP, cookies, network details, screenshots, PDFs, uploads and extension browser APIs.                                         |
-| Native Windows   | UI inspection, invocation, values, menus, keyboard/mouse input and window screenshots through a persistent helper.                                                       |
-| Verification     | Real-browser tests cover input, ownership, cancellation, navigation, favicon restoration, multiple MCP clients and the actual extension/native-host connection.          |
+| Capability       | Implementation                                                                                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser routing  | Local discovery, names and aliases, independent selection per agent and a persistent controller per browser. Browser-qualified tab IDs retain their original destination. |
+| Fast actions     | Ordered batches reduce agent round trips. Targeted snapshots and bounded request history keep responses small. Indicators add no fixed input delay.                       |
+| Tab ownership    | One agent per tab. Release and disconnect restore indicators. Human stop invalidates queued work and active batches.                                                      |
+| Visible activity | Non-intercepting cursor overlay, click feedback and temporary favicons. Original icon attributes survive release and navigation. Screenshots hide the cursor by default.  |
+| Broad access     | Page actions, JavaScript, raw page/browser CDP, cookies, network details, screenshots, PDFs, uploads and extension browser APIs.                                          |
+| Native Windows   | UI inspection, invocation, values, menus, keyboard/mouse input and window screenshots through a persistent helper.                                                        |
+| Verification     | Real-browser tests cover input, ownership, cancellation, navigation, favicon restoration, independent MCP clients and two simultaneous extension/native-host connections. |
 
 ## Setup
 
@@ -32,13 +32,15 @@ pnpm build
 pnpm setup:local --codex
 ```
 
-Enable remote debugging at `edge://inspect/#remote-debugging`. In `edge://extensions`, enable Developer mode and load the unpacked `dist/extension` folder. Setup registers its Native Messaging host for Edge, Chrome and Chromium.
+In each browser, open `chrome://inspect/#remote-debugging` and enable remote debugging. In `chrome://extensions`, enable Developer mode and load the unpacked `dist/extension` folder. Chromium browsers redirect these addresses to their own internal pages. Approve the browser's connection prompt when an agent attaches.
 
 `--codex` adds the MCP server to your user Codex configuration. Restart the agent connection to load it. For other MCP clients, copy the generated `mcpServers` entry from `%LOCALAPPDATA%\BrowserBridge\mcp.json`.
 
-The controller starts with the first agent or extension connection and exits ten minutes after the last client disconnects. `pnpm status` reports its state; `pnpm doctor` checks browser attachment; `pnpm stop` disconnects it and restores indicators.
+Ask your agent to "control Brave" or "control Edge". One MCP connection exposes all browsers. Each agent keeps its own selection; existing tab IDs retain their browser. Duplicate names require the browser ID from discovery.
 
-Settings and credentials live in `%LOCALAPPDATA%\BrowserBridge`. Each controller attaches to one configured browser. Set `browser` in `config.json` to `msedge`, `chrome`, `chromium` or a CDP URL. `BROWSER_BRIDGE_HOME` selects a separate runtime directory.
+The manager starts with the first agent or extension connection and exits ten minutes after the last disconnects. `pnpm browsers` lists discovered browsers. `pnpm doctor --browser Brave` checks attachment; `pnpm status` reports active control; `pnpm stop` disconnects and restores indicators.
+
+Settings and credentials live in `%LOCALAPPDATA%\BrowserBridge`. In `config.json`, `browser` sets the default name or ID. Discovery covers Edge, Chrome, Brave, Vivaldi, Opera/GX and Chromium, including Windows Scoop installs. Add `browsers` entries with `id`, `name`, optional `aliases`, and `userDataDir` or `endpoint` for custom instances. `BROWSER_BRIDGE_HOME` selects a separate runtime directory.
 
 ## Development
 
@@ -55,6 +57,8 @@ Use Conventional Commits and `<name>/<type>-<description>` branches. Keep creden
 
 ## Scope
 
-Control runs locally; requested browser results still reach your chosen agent. Ownership coordinates clients but does not isolate shared cookies or storage. Raw CDP and extension APIs are privileged escape hatches.
+The current backend attaches to Chromium browsers. Firefox and Safari need separate backends. Independently named profiles use separate user-data directories. Browser-owned approval prompts and debugging banners still apply.
+
+Control runs locally; requested results still reach your chosen agent. Ownership coordinates clients but does not isolate shared cookies or storage. Raw CDP and extension APIs are privileged escape hatches.
 
 Favicons remain subject to site and browser behavior. Native OS input uses the foreground desktop. Protected browser pages and OS security boundaries still apply.

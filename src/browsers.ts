@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createConnection } from 'node:net';
 import { access, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -115,6 +116,23 @@ export function browserRoots(env = environment()): { browser: string; root: stri
   });
 }
 const isEndpoint = (value: string) => /^(?:https?|wss?):\/\//i.test(value);
+export async function endpointListening(endpoint: string): Promise<boolean> {
+  const url = new URL(endpoint);
+  return new Promise((resolve) => {
+    const socket = createConnection({
+      host: url.hostname.replace(/^\[|\]$/g, ''),
+      port: Number(url.port || (['https:', 'wss:'].includes(url.protocol) ? 443 : 80)),
+    });
+    const finish = (listening: boolean) => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(listening);
+    };
+    const timer = setTimeout(() => finish(false), 250);
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
+}
 function checkEndpoint(endpoint: string): string {
   if (!isEndpoint(endpoint)) throw new Error('CDP endpoint must use http, https, ws or wss.');
   new URL(endpoint);
@@ -211,7 +229,7 @@ export class BrowserRegistry {
       }),
     );
     const targets: BrowserTarget[] = [];
-    const identities = new Set<string>();
+    const identities = new Map<string, BrowserTarget>();
     for (const target of found) {
       if (!target) continue;
       const identity = target.userDataDir
@@ -228,12 +246,25 @@ export class BrowserRegistry {
       }
       const keys = [identity, endpointIdentity].filter((key): key is string => !!key);
       if (keys.some((key) => identities.has(key))) {
-        if (!target.configured) continue;
+        if (!target.configured) {
+          const configured = keys
+            .map((key) => identities.get(key))
+            .find((candidate) => candidate?.configured);
+          if (configured && configured.browser === 'custom') {
+            configured.browser = target.browser;
+            configured.aliases = [...new Set([...configured.aliases, ...target.aliases])];
+            configured.userDataDir ??= target.userDataDir;
+            configured.setupUrl = target.setupUrl;
+            configured.installed = target.installed;
+            if (configured.name === 'Configured browser') configured.name = target.name;
+          }
+          continue;
+        }
         throw new Error(
           `Browser ${target.id} duplicates another configured instance. Add an alias instead.`,
         );
       }
-      for (const key of keys) identities.add(key);
+      for (const key of keys) identities.set(key, target);
       if (targets.some((item) => item.id === target.id))
         throw new Error(`Duplicate browser ID: ${target.id}.`);
       targets.push(target);

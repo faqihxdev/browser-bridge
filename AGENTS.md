@@ -9,3 +9,4 @@
 - Browser actions use explicit tab IDs. Preserve the user's foreground tab unless focus is requested.
 - Test ownership, disconnect cleanup, navigation, indicator restoration and actual browser behavior when changing their implementations.
 - Run relevant checks at each checkpoint. Keep human setup and practical limits in the README.
+- Keep UI compact and near-black. Use grayscale except for warnings and errors. Show only useful text.

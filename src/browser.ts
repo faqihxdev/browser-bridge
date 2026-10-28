@@ -66,8 +66,8 @@ export class BrowserController {
     };
   }
   private async connect(): Promise<Browser> {
-    if (this.browser?.isConnected()) return this.browser;
     if (this.connecting) return this.connecting;
+    if (this.browser?.isConnected()) return this.browser;
     this.connecting = (async () => {
       const browser = await chromium.connectOverCDP(await resolveEndpoint(this.config.browser), {
         timeout: this.config.connectTimeoutMs ?? 60_000,

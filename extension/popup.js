@@ -11,8 +11,8 @@ async function refresh() {
     if (!response) throw new Error('The extension worker did not respond.');
     if (response.error) throw new Error(response.error);
     document.querySelector('#connection').textContent = response.result.connected
-      ? 'Browser connected'
-      : 'Controller ready';
+      ? 'Connected'
+      : 'Ready';
     document.querySelector('#lamp').className = 'ready';
     tabs.replaceChildren();
     for (const claim of response.result.claims) {
@@ -23,11 +23,20 @@ async function refresh() {
       name.textContent = claim.agent;
       const url = document.createElement('p');
       url.className = 'url';
-      url.textContent = claim.url;
+      let address = claim.url;
+      try {
+        const parsed = new URL(claim.url);
+        address = ['http:', 'https:'].includes(parsed.protocol)
+          ? parsed.host + (parsed.pathname === '/' ? '' : parsed.pathname)
+          : parsed.protocol === 'data:'
+            ? 'Data page'
+            : claim.url;
+      } catch {}
+      url.textContent = address;
       info.append(name, url);
       const stop = document.createElement('button');
       stop.textContent = 'Stop';
-      stop.setAttribute('aria-label', `Stop ${claim.agent} on ${claim.url}`);
+      stop.setAttribute('aria-label', `Stop ${claim.agent} on ${address}`);
       stop.onclick = async () => {
         stop.disabled = true;
         try {
@@ -49,13 +58,13 @@ async function refresh() {
     if (!response.result.claims.length) {
       const empty = document.createElement('p');
       empty.className = 'empty';
-      empty.textContent = 'No agent is controlling a tab.';
+      empty.textContent = 'No active tabs.';
       tabs.append(empty);
     }
   } catch (error) {
-    document.querySelector('#connection').textContent = 'Connection unavailable';
+    document.querySelector('#connection').textContent = 'Unavailable';
     document.querySelector('#lamp').className = '';
-    errorBox.textContent = `${error.message} Run Browser Bridge setup, then reload this extension.`;
+    errorBox.textContent = `${error.message} Run setup, then reload this extension.`;
     errorBox.hidden = false;
   } finally {
     document.querySelector('#refresh').disabled = false;

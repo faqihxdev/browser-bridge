@@ -191,6 +191,41 @@ test(
         })) as { product: string };
         assert.ok(version.product);
       });
+      await t.test(
+        'helper upgrades preserve ownership and restore the original favicons',
+        async () => {
+          const before = await call('evaluate', {
+            expression:
+              '(() => { globalThis.__browserBridge.version = 0; return globalThis.__browserBridge.documentId; })()',
+          });
+          await call('snapshot');
+          const after = (await call('evaluate', {
+            expression:
+              '({ documentId: globalThis.__browserBridge.documentId, owner: globalThis.__browserBridge.owner, overlays: document.querySelectorAll("html > div[aria-hidden=true]").length })',
+          })) as { documentId: string; owner: string; overlays: number };
+          assert.notEqual(after.documentId, before);
+          assert.equal(after.owner, first.label);
+          assert.equal(after.overlays, 1);
+          await call('release');
+          const observer = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, {
+            noDefaults: true,
+          });
+          try {
+            const page = observer
+              .contexts()[0]!
+              .pages()
+              .find((page) => page.url().endsWith('/next'))!;
+            assert.deepEqual(
+              await page
+                .locator('link[rel~="icon"]')
+                .evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
+              ['/original.svg', '/other.ico'],
+            );
+          } finally {
+            await observer.close();
+          }
+        },
+      );
       await t.test('disconnect restores indicators without closing browser tabs', async () => {
         await controller.releaseSession(first.id);
         assert.equal((controller.status().claims as unknown[]).length, 0);
