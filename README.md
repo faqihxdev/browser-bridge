@@ -8,15 +8,7 @@ Let local MCP agents control your existing browser, with visible activity and sh
 
 Node.js 24, TypeScript and Playwright attach to your signed-in Chromium browser through CDP. A shared controller serves agents over an authenticated local named pipe. The MV3 extension supplies browser APIs and a status/stop popup through Native Messaging. A persistent Windows UI Automation helper handles native controls.
 
-```mermaid
-flowchart LR
-  Agents[MCP agents] <--> Adapters[Stdio adapters]
-  Adapters <--> Controller[Shared local controller]
-  Controller <-->|CDP| Browser[Existing browser session]
-  Controller <--> Host[Native Messaging host]
-  Host <--> Extension[Browser Bridge extension]
-  Controller --> Windows[Windows UI Automation]
-```
+![Browser Bridge architecture](docs/images/architecture.svg)
 
 ## Engineering highlights
 
@@ -46,7 +38,7 @@ Enable remote debugging at `edge://inspect/#remote-debugging`. In `edge://extens
 
 The controller starts with the first agent or extension connection and exits ten minutes after the last client disconnects. `pnpm status` reports its state; `pnpm doctor` checks browser attachment; `pnpm stop` disconnects it and restores indicators.
 
-Settings and credentials live in `%LOCALAPPDATA%\BrowserBridge`. Set `browser` in `config.json` to `msedge`, `chrome`, `chromium` or a CDP URL. `BROWSER_BRIDGE_HOME` selects a separate runtime directory.
+Settings and credentials live in `%LOCALAPPDATA%\BrowserBridge`. Each controller attaches to one configured browser. Set `browser` in `config.json` to `msedge`, `chrome`, `chromium` or a CDP URL. `BROWSER_BRIDGE_HOME` selects a separate runtime directory.
 
 ## Development
 

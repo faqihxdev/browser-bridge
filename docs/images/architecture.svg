@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="bb-title bb-description">
+  <title id="bb-title">Browser Bridge architecture</title>
+  <desc id="bb-description">MCP agents run stdio adapters that connect to one shared local controller through an authenticated named pipe. The controller uses Playwright and CDP to control an existing Chromium browser. A local Native Messaging host connects the controller to the Browser Bridge extension for browser APIs, status and stop controls. A persistent Windows UI Automation helper handles native controls.</desc>
+  <defs>
+    <marker id="bb-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#93b5ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .node { fill: #172133; stroke: #384b6b; stroke-width: 1.5; }
+      .accent { fill: #1b2d50; stroke: #6b95eb; stroke-width: 1.5; }
+      .name { fill: #f1f5ff; font-size: 21px; font-weight: 600; }
+      .detail { fill: #c8d5ec; font-size: 16px; }
+      .caption { fill: #a5b8d7; font-size: 14px; }
+      .edge { fill: none; stroke: #93b5ff; stroke-width: 2; marker-end: url(#bb-arrow); stroke-linejoin: round; }
+      .both { marker-start: url(#bb-arrow); }
+    </style>
+  </defs>
+  <rect width="1280" height="640" rx="20" fill="#0e1522"/>
+  <text x="40" y="38" fill="#93b5ff" font-size="12" font-weight="600" letter-spacing="2">BROWSER BRIDGE / SYSTEM ARCHITECTURE</text>
+  <text class="caption" x="40" y="80">Local control of your existing browser session</text>
+
+  <path class="edge both" d="M 220 310 H 270"/>
+  <path class="edge both" d="M 480 310 H 540"/>
+  <path class="edge both" d="M 800 275 H 880 V 155 H 960"/>
+  <path class="edge both" d="M 800 350 H 960"/>
+  <path class="edge both" d="M 1100 405 V 490"/>
+  <path class="edge both" d="M 670 380 V 490"/>
+  <text class="caption" x="897" y="137">CDP</text>
+  <text class="caption" x="817" y="332">Local pipe</text>
+  <text class="caption" x="1080" y="452" text-anchor="end">Native Messaging</text>
+  <text class="caption" x="688" y="437">Persistent helper</text>
+
+  <rect class="node" x="40" y="255" width="180" height="110" rx="12"/>
+  <text class="name" x="60" y="289">MCP agents</text>
+  <text class="detail" x="60" y="318">Any MCP client</text>
+  <text class="caption" x="60" y="346">Explicit tab ownership</text>
+
+  <rect class="node" x="270" y="255" width="210" height="110" rx="12"/>
+  <text class="name" x="290" y="289">Stdio adapters</text>
+  <text class="detail" x="290" y="318">One per agent session</text>
+  <text class="caption" x="290" y="346">Authenticated local pipe</text>
+
+  <rect class="accent" x="540" y="240" width="260" height="140" rx="12"/>
+  <text class="name" x="560" y="277">Shared controller</text>
+  <text class="detail" x="560" y="309">Node.js · Playwright</text>
+  <text class="caption" x="560" y="337">One connection · per-tab queues</text>
+  <text class="caption" x="560" y="361">On-demand process · idle exit</text>
+
+  <rect class="node" x="960" y="100" width="280" height="110" rx="12"/>
+  <text class="name" x="980" y="134">Existing browser</text>
+  <text class="detail" x="980" y="163">Edge · Chrome · Chromium</text>
+  <text class="caption" x="980" y="191">Page input · cursor · favicon</text>
+
+  <rect class="node" x="960" y="295" width="280" height="110" rx="12"/>
+  <text class="name" x="980" y="329">Native Messaging</text>
+  <text class="detail" x="980" y="358">Local Node.js host</text>
+  <text class="caption" x="980" y="386">Browser-launched process</text>
+
+  <rect class="accent" x="960" y="490" width="280" height="110" rx="12"/>
+  <text class="name" x="980" y="524">Browser Bridge</text>
+  <text class="detail" x="980" y="553">MV3 extension</text>
+  <text class="caption" x="980" y="581">Browser APIs · status · stop</text>
+
+  <rect class="node" x="540" y="490" width="260" height="110" rx="12"/>
+  <text class="name" x="560" y="524">Windows UIA</text>
+  <text class="detail" x="560" y="553">Native controls · desktop</text>
+  <text class="caption" x="560" y="581">Inspection · input · screenshots</text>
+</svg>
