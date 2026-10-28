@@ -77,6 +77,67 @@ test(
         );
         assert.equal(results[2]!.result, 'Verified ✓');
       });
+      await t.test(
+        'the indicator follows agent actions and ignores manual pointer input',
+        async () => {
+          const observer = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, {
+            noDefaults: true,
+          });
+          try {
+            const page = observer
+              .contexts()[0]!
+              .pages()
+              .find((page) => page.url() === url + '/')!;
+            const cdp = await page.context().newCDPSession(page);
+            const pointerStyle = async (): Promise<string> => {
+              const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+              const visit = (node: {
+                attributes?: string[];
+                children?: any[];
+                shadowRoots?: any[];
+              }): string | undefined => {
+                const attributes = node.attributes ?? [];
+                const properties = Object.fromEntries(
+                  Array.from({ length: attributes.length / 2 }, (_, index) => [
+                    attributes[index * 2]!,
+                    attributes[index * 2 + 1]!,
+                  ]),
+                );
+                if (properties.class === 'cursor') return properties.style;
+                for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
+                  const found = visit(child);
+                  if (found !== undefined) return found;
+                }
+              };
+              const style = visit(root);
+              assert.ok(style, 'Agent cursor exists in its closed shadow root');
+              return style;
+            };
+            await call('act', { action: 'move', x: 70, y: 90 });
+            const before = await pointerStyle();
+            await page.mouse.move(250, 260);
+            await page.mouse.click(250, 260);
+            assert.equal(await pointerStyle(), before);
+            await call('act', { action: 'move', x: 90, y: 110 });
+            assert.notEqual(await pointerStyle(), before);
+            const opacity = await page
+              .locator('link[rel="icon"]')
+              .first()
+              .evaluate((link) => {
+                const svg = decodeURIComponent(link.getAttribute('href')!.split(',')[1]!);
+                return Number(
+                  new DOMParser()
+                    .parseFromString(svg, 'image/svg+xml')
+                    .documentElement.getAttribute('opacity'),
+                );
+              });
+            assert.ok(opacity > 0 && opacity < 1, 'Controlled favicon is translucent');
+            await cdp.detach();
+          } finally {
+            await observer.close();
+          }
+        },
+      );
       await t.test('tab ownership blocks another agent', async () => {
         await assert.rejects(
           controller.execute(second, 'act', { tabId, action: 'click', selector: '#save' }),

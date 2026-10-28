@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 2) return;
+  if (globalThis.__browserBridge?.version === 3) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -9,20 +9,14 @@
     [...crypto.getRandomValues(new Uint8Array(16))]
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
-  const state = { version: 2, documentId, refs: new Map(), sequence: 0, owner: null };
+  const state = { version: 3, documentId, refs: new Map(), sequence: 0, owner: null };
   const ids = new WeakMap();
-  let host,
-    cursor,
-    label,
-    icon,
-    observer,
-    hidden = false;
+  let host, cursor, label, icon, observer;
   const originals = new Map();
+  const pointerSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32"><path d="M3 2v24l6-7 5 11 4-2-5-10h10Z" fill="#fff" stroke="#000" stroke-width="1.75" stroke-linejoin="round"/></svg>';
   const iconHref =
-    'data:image/svg+xml,' +
-    encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#171717"/><path d="M9 6v20l5-6 4 8 4-2-4-8h8z" fill="#e5e5e5"/></svg>',
-    );
+    'data:image/svg+xml,' + encodeURIComponent(pointerSvg.replace('<svg ', '<svg opacity="0.55" '));
   function visual() {
     if (host?.isConnected) return;
     host = document.createElement('div');
@@ -32,11 +26,12 @@
     const root = host.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
     style.textContent =
-      ':host{pointer-events:none} .cursor{position:absolute;left:0;top:0;display:none;width:19px;height:24px;filter:drop-shadow(0 1px 1px #000c);will-change:transform} .pointer{width:100%;height:100%;background:#e5e5e5;clip-path:polygon(0 0,0 94%,28% 68%,49% 100%,66% 90%,46% 60%,88% 60%)} .label{position:absolute;left:21px;top:18px;white-space:nowrap;background:#171717;color:#ddd;border:1px solid #3a3a3a;border-radius:4px;padding:2px 5px;font:11px/1.4 "Segoe UI",sans-serif} .pulse{position:absolute;inset:-8px;border:1px solid #aaa;border-radius:50%;opacity:0} @keyframes pulse{0%{opacity:.8;transform:scale(.5)}100%{opacity:0;transform:scale(1.4)}} @media(prefers-reduced-motion:reduce){.pulse{animation:none!important}}';
+      ':host{pointer-events:none} .cursor{position:absolute;left:0;top:0;display:none;width:19px;height:25px;will-change:transform} .pointer,.pointer svg{display:block;width:100%;height:100%} .label{position:absolute;left:21px;top:18px;white-space:nowrap;background:#171717;color:#ddd;border:1px solid #3a3a3a;border-radius:4px;padding:2px 5px;font:11px/1.4 "Segoe UI",sans-serif} .pulse{position:absolute;inset:-8px;border:1px solid #aaa;border-radius:50%;opacity:0} @media(prefers-reduced-motion:reduce){.pulse{animation:none!important}}';
     cursor = document.createElement('div');
     cursor.className = 'cursor';
     const arrow = document.createElement('div');
     arrow.className = 'pointer';
+    arrow.innerHTML = pointerSvg;
     label = document.createElement('span');
     label.className = 'label';
     const pulse = document.createElement('div');
@@ -100,7 +95,6 @@
     }
   };
   state.hide = (value) => {
-    hidden = value;
     if (host) host.style.visibility = value ? 'hidden' : 'visible';
   };
   state.release = (expectedKey) => {
@@ -181,20 +175,6 @@
       truncated: items.length >= limit,
     };
   };
-  document.addEventListener(
-    'mousemove',
-    (event) => {
-      if (event.isTrusted && state.owner && !hidden) state.move(event.clientX, event.clientY);
-    },
-    { passive: true },
-  );
-  document.addEventListener(
-    'mousedown',
-    (event) => {
-      if (event.isTrusted && state.owner && !hidden) state.move(event.clientX, event.clientY, true);
-    },
-    { passive: true },
-  );
   globalThis.__browserBridge = state;
   if (previousOwner) state.claim(previousOwner, previousKey);
 })();

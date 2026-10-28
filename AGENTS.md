@@ -10,3 +10,7 @@
 - Test ownership, disconnect cleanup, navigation, indicator restoration and actual browser behavior when changing their implementations.
 - Run relevant checks at each checkpoint. Keep human setup and practical limits in the README.
 - Keep UI compact and near-black. Use grayscale except for warnings and errors. Show only useful text.
+
+2026-10-29
+
+- The cursor follows agent actions only. Use a white arrow with a black outline and a translucent cursor favicon only while the tab is owned.

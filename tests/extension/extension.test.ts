@@ -1,46 +1,60 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { createServer } from 'node:net';
-import { chromium } from 'playwright-core';
+import { chromium, type BrowserContext } from 'playwright-core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-async function availablePort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const port = (server.address() as { port: number }).port;
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  return port;
+function cleanupOnEnd(t: TestContext, client: Client) {
+  const contexts: BrowserContext[] = [];
+  const pending: Promise<unknown>[] = [];
+  let closing: Promise<void> | undefined;
+  const close = () =>
+    (closing ??= (async () => {
+      await client.close().catch(() => undefined);
+      const results = await Promise.allSettled([
+        ...pending,
+        ...contexts.map((context) => context.close()),
+      ]);
+      const errors = results.flatMap((result) =>
+        result.status === 'rejected' ? [result.reason] : [],
+      );
+      if (errors.length) throw new AggregateError(errors, 'Browser test cleanup failed.');
+    })());
+  t.after(close);
+  return { contexts, pending, close };
 }
 
 test(
   'installed MV3 extension reaches its real native host and browser APIs',
   { timeout: 90000 },
-  async () => {
+  async (t) => {
     const runtime = await mkdtemp(join(tmpdir(), 'browser-bridge-extension-'));
-    const server = createServer();
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const port = (server.address() as { port: number }).port;
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    const profile = join(runtime, 'profile');
     await writeFile(
       join(runtime, 'config.json'),
-      JSON.stringify({ browser: `http://127.0.0.1:${port}`, idleMs: 2000 }),
+      JSON.stringify({
+        browser: 'extension-test',
+        browsers: [{ id: 'extension-test', userDataDir: profile }],
+        idleMs: 2000,
+      }),
     );
     const extension = resolve('dist/extension');
-    const context = await chromium.launchPersistentContext(join(runtime, 'profile'), {
+    const client = new Client({ name: 'Extension verification', version: '1' });
+    const cleanup = cleanupOnEnd(t, client);
+    const context = await chromium.launchPersistentContext(profile, {
       channel: 'chromium',
       headless: true,
       env: { ...process.env, BROWSER_BRIDGE_HOME: runtime },
       args: [
         `--disable-extensions-except=${extension}`,
         `--load-extension=${extension}`,
-        `--remote-debugging-port=${port}`,
+        '--remote-debugging-port=0',
       ],
     });
-    const client = new Client({ name: 'Extension verification', version: '1' });
+    cleanup.contexts.push(context);
     try {
       const worker =
         context.serviceWorkers()[0] ??
@@ -64,6 +78,15 @@ test(
       } catch {
         throw new Error(await popup.locator('body').innerText());
       }
+      const discovery = (await client.callTool({ name: 'browser_list' })) as {
+        content: { text: string }[];
+      };
+      assert.equal(
+        JSON.parse(discovery.content[0]!.text).browsers.find(
+          (browser: { id: string }) => browser.id === 'extension-test',
+        ).listening,
+        true,
+      );
       const reply = (await client.callTool({
         name: 'browser_api',
         arguments: { namespace: 'tabs', method: 'query', args: [{}] },
@@ -85,8 +108,7 @@ test(
       await mkdir('artifacts', { recursive: true });
       await popup.locator('body').screenshot({ path: 'artifacts/extension-popup.png' });
     } finally {
-      await client.close();
-      await context.close();
+      await cleanup.close();
     }
   },
 );
@@ -94,23 +116,21 @@ test(
 test(
   'two installed extensions keep API results and human stop in their own browser',
   { timeout: 120000 },
-  async () => {
+  async (t) => {
     const runtime = await mkdtemp(join(tmpdir(), 'browser-bridge-two-extensions-'));
-    const firstPort = await availablePort();
-    const secondPort = await availablePort();
     await writeFile(
       join(runtime, 'config.json'),
       JSON.stringify({
         browser: 'alpha',
         idleMs: 2000,
         browsers: [
-          { id: 'alpha', name: 'Test Edge', endpoint: `http://127.0.0.1:${firstPort}` },
-          { id: 'beta', name: 'Test Brave', endpoint: `http://127.0.0.1:${secondPort}` },
+          { id: 'alpha', name: 'Test Edge', userDataDir: join(runtime, 'profile-a') },
+          { id: 'beta', name: 'Test Brave', userDataDir: join(runtime, 'profile-b') },
         ],
       }),
     );
     const extension = resolve('dist/extension');
-    const launch = (name: string, port: number) =>
+    const launch = (name: string) =>
       chromium.launchPersistentContext(join(runtime, name), {
         channel: 'chromium',
         headless: true,
@@ -118,13 +138,15 @@ test(
         args: [
           `--disable-extensions-except=${extension}`,
           `--load-extension=${extension}`,
-          `--remote-debugging-port=${port}`,
+          '--remote-debugging-port=0',
         ],
       });
-    const first = await launch('profile-a', firstPort);
-    const second = await launch('profile-b', secondPort);
     const client = new Client({ name: 'Multi-browser verification', version: '1' });
-    let closingFirst: Promise<void> | undefined;
+    const cleanup = cleanupOnEnd(t, client);
+    const first = await launch('profile-a');
+    cleanup.contexts.push(first);
+    const second = await launch('profile-b');
+    cleanup.contexts.push(second);
     const call = async (name: string, args: Record<string, unknown> = {}): Promise<any> => {
       const response = (await client.callTool({ name, arguments: args })) as {
         isError?: boolean;
@@ -157,6 +179,12 @@ test(
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       assert.equal(status.registeredExtensions, 2);
+      const discovery = await call('browser_list');
+      assert.ok(
+        discovery.browsers
+          .filter((browser: { id: string }) => ['alpha', 'beta'].includes(browser.id))
+          .every((browser: { listening: boolean }) => browser.listening),
+      );
       assert.notEqual(
         await workerA.evaluate('globalThis.__browserBridgeConnectionId'),
         await workerB.evaluate('globalThis.__browserBridgeConnectionId'),
@@ -238,7 +266,7 @@ test(
       assert.ok(!claims.some((claim: { tabId: string }) => claim.tabId === pageA.tabId));
       assert.ok(claims.some((claim: { tabId: string }) => claim.tabId === pageB.tabId));
       // CDP disconnects before Playwright finishes waiting for native-host descendants.
-      closingFirst = first.close();
+      cleanup.pending.push(first.close());
       for (let attempt = 0; attempt < 100; attempt++) {
         const current = await call('browser_status');
         if (!current.browsers.find((browser: { id: string }) => browser.id === 'alpha').connected)
@@ -273,8 +301,7 @@ test(
         'beta',
       );
     } finally {
-      await client.close();
-      await Promise.all([closingFirst ?? first.close(), second.close()]);
+      await cleanup.close();
     }
   },
 );
