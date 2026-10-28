@@ -4,12 +4,12 @@ import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir, chmod, access } from 'node:fs/promises';
 import { join, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { homedir } from 'node:os';
 import { defaults, home, loadConfig } from './config.js';
+import { browserRoots } from './browsers.js';
 
 const exec = promisify(execFile);
 export async function setup(codex: boolean): Promise<unknown> {
-  await loadConfig();
+  const config = await loadConfig();
   const cli = fileURLToPath(new URL('./cli.js', import.meta.url));
   const extension = fileURLToPath(new URL('./extension/', import.meta.url));
   const manifest = JSON.parse(await readFile(join(extension, 'manifest.json'), 'utf8'));
@@ -44,7 +44,13 @@ export async function setup(codex: boolean): Promise<unknown> {
   const path = join(nativeDir, 'dev.browser_bridge.json');
   await writeFile(path, JSON.stringify(nativeManifest, null, 2));
   if (process.platform === 'win32') {
-    for (const browser of ['Google\\Chrome', 'Microsoft\\Edge', 'Chromium']) {
+    for (const browser of [
+      'Google\\Chrome',
+      'Microsoft\\Edge',
+      'Chromium',
+      'BraveSoftware\\Brave-Browser',
+      'Vivaldi',
+    ]) {
       await exec(
         'reg.exe',
         [
@@ -61,14 +67,12 @@ export async function setup(codex: boolean): Promise<unknown> {
       );
     }
   } else {
-    const roots =
-      process.platform === 'darwin'
-        ? ['Google/Chrome', 'Microsoft Edge', 'Chromium'].map((browser) =>
-            join(homedir(), 'Library', 'Application Support', browser, 'NativeMessagingHosts'),
-          )
-        : ['google-chrome', 'microsoft-edge', 'chromium'].map((browser) =>
-            join(homedir(), '.config', browser, 'NativeMessagingHosts'),
-          );
+    const roots = new Set([
+      ...browserRoots().map(({ root }) => join(root, 'NativeMessagingHosts')),
+      ...(config.browsers ?? []).flatMap((browser) =>
+        browser.userDataDir ? [join(browser.userDataDir, 'NativeMessagingHosts')] : [],
+      ),
+    ]);
     for (const root of roots) {
       await mkdir(root, { recursive: true });
       await writeFile(

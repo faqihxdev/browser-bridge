@@ -14,7 +14,7 @@ export async function runMcp(): Promise<void> {
     {
       capabilities: { tools: {} },
       instructions:
-        'List tabs to obtain explicit tab IDs. Each tab has one agent owner. Release tabs when done. Preserve foreground focus unless requested. Use batches to reduce round trips. Raw CDP and browser APIs are privileged and share the real signed-in profile.',
+        'Use browser_list to discover browsers. When the user names a browser, select it with browser_select or pass browser to a tool. Ask which stable browser ID to use if its name is ambiguous. Each agent session has its own selection. Tab IDs include the browser identity and remain tied to that browser. List tabs to obtain explicit IDs. Each tab has one agent owner. Release tabs when done. Preserve foreground focus unless requested. Use batches to reduce round trips. Raw CDP and browser APIs are privileged and share the real signed-in profile.',
     },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({

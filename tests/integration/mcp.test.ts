@@ -11,7 +11,7 @@ import { chromium } from 'playwright-core';
 import { NativeDecoder, encodeNative } from '../../src/native.js';
 
 test(
-  'independent MCP clients share a daemon and native messages route browser APIs',
+  'MCP clients route independent browsers and reject unverified native hosts',
   { timeout: 120000 },
   async () => {
     const server = createServer();
@@ -23,10 +23,26 @@ test(
       headless: true,
       args: [`--remote-debugging-port=${port}`],
     });
+    const secondServer = createServer();
+    await new Promise<void>((resolve) => secondServer.listen(0, '127.0.0.1', resolve));
+    const secondPort = (secondServer.address() as { port: number }).port;
+    await new Promise<void>((resolve) => secondServer.close(() => resolve()));
+    const otherBrowser = await chromium.launch({
+      ...(process.platform === 'win32' ? { channel: 'msedge' } : {}),
+      headless: true,
+      args: [`--remote-debugging-port=${secondPort}`],
+    });
     const runtime = await mkdtemp(join(tmpdir(), 'browser-bridge-mcp-'));
     await writeFile(
       join(runtime, 'config.json'),
-      JSON.stringify({ browser: `http://127.0.0.1:${port}`, idleMs: 2000 }),
+      JSON.stringify({
+        browser: 'browser-a',
+        browsers: [
+          { id: 'browser-a', name: 'Browser A', endpoint: `http://127.0.0.1:${port}` },
+          { id: 'browser-b', name: 'Browser B', endpoint: `http://127.0.0.1:${secondPort}` },
+        ],
+        idleMs: 2000,
+      }),
     );
     const clients: Client[] = [];
     const connect = async (name: string) => {
@@ -50,7 +66,7 @@ test(
     try {
       const first = await connect('First MCP client');
       const second = await connect('Second MCP client');
-      assert.equal((await first.listTools()).tools.length, 11);
+      assert.equal((await first.listTools()).tools.length, 13);
       const same = await Promise.all([
         first.callTool({ name: 'browser_status' }),
         first.callTool({ name: 'browser_status' }),
@@ -59,7 +75,63 @@ test(
       assert.equal(firstStatus.clients, 1);
       assert.equal(json(same[1]).pid, firstStatus.pid);
       assert.equal(json(await second.callTool({ name: 'browser_status' })).pid, firstStatus.pid);
+      const discovered = json(await first.callTool({ name: 'browser_list' }));
+      assert.ok(discovered.browsers.some((browser: { id: string }) => browser.id === 'browser-b'));
+      assert.ok(discovered.browsers.every((browser: { connected: boolean }) => !browser.connected));
+      json(await first.callTool({ name: 'browser_select', arguments: { browser: 'Browser A' } }));
+      json(await second.callTool({ name: 'browser_select', arguments: { browser: 'Browser B' } }));
       const { tabId } = json(await first.callTool({ name: 'browser_open', arguments: {} }));
+      const otherTab = json(await second.callTool({ name: 'browser_open', arguments: {} }));
+      assert.ok(tabId.startsWith('browser-a/'));
+      assert.ok(otherTab.tabId.startsWith('browser-b/'));
+      json(
+        await second.callTool({
+          name: 'browser_evaluate',
+          arguments: { tabId: otherTab.tabId, expression: 'globalThis.routingMarker = "B"' },
+        }),
+      );
+      json(await first.callTool({ name: 'browser_select', arguments: { browser: 'Browser B' } }));
+      assert.equal(
+        json(
+          await first.callTool({
+            name: 'browser_evaluate',
+            arguments: { tabId, expression: 'globalThis.routingMarker ?? "A"' },
+          }),
+        ),
+        'A',
+      );
+      const mismatch = await first.callTool({
+        name: 'browser_evaluate',
+        arguments: { tabId, browser: 'Browser B', expression: '"wrong"' },
+      });
+      assert.equal(mismatch.isError, true);
+      const mixed = await first.callTool({
+        name: 'browser_batch',
+        arguments: {
+          actions: [
+            {
+              op: 'evaluate',
+              args: { tabId, expression: 'globalThis.crossBrowserMutation = true' },
+            },
+            { op: 'evaluate', args: { tabId: otherTab.tabId, expression: 'true' } },
+          ],
+        },
+      });
+      assert.equal(mixed.isError, true);
+      assert.equal(
+        json(
+          await first.callTool({
+            name: 'browser_evaluate',
+            arguments: { tabId, expression: 'globalThis.crossBrowserMutation ?? false' },
+          }),
+        ),
+        false,
+      );
+      json(await first.callTool({ name: 'browser_select', arguments: { browser: 'Browser A' } }));
+      assert.equal(
+        json(await second.callTool({ name: 'browser_status' })).selectedBrowserId,
+        'browser-b',
+      );
       json(
         await first.callTool({
           name: 'browser_evaluate',
@@ -125,15 +197,21 @@ test(
         });
         native!.once('error', reject);
       });
-      assert.equal(json(await first.callTool({ name: 'browser_status' })).extensionConnected, true);
-      assert.deepEqual(
-        json(
-          await first.callTool({
-            name: 'browser_api',
-            arguments: { namespace: 'tabs', method: 'query', args: [{}] },
-          }),
-        ),
-        [{ id: 7, title: 'Extension API result' }],
+      assert.equal(
+        json(await first.callTool({ name: 'browser_status' })).extensionConnected,
+        false,
+      );
+      const unverified = await first.callTool({
+        name: 'browser_api',
+        arguments: { namespace: 'tabs', method: 'query', args: [{}] },
+      });
+      assert.equal(unverified.isError, true);
+      assert.match(unverified.content[0].text, /no verified Browser Bridge extension/);
+      json(
+        await second.callTool({
+          name: 'browser_page',
+          arguments: { tabId: otherTab.tabId, op: 'release' },
+        }),
       );
       await first.close();
       let claims;
@@ -151,6 +229,7 @@ test(
       await Promise.all(clients.map((client) => client.close().catch(() => undefined)));
       native?.stdin?.end();
       await browser.close();
+      await otherBrowser.close();
     }
   },
 );

@@ -14,6 +14,7 @@ import { Queue, deadline, home, message, type Config } from './config.js';
 import type { Data } from './wire.js';
 import { Desktop } from './desktop.js';
 import { resolveEndpoint } from './endpoint.js';
+import { extensionOrigin } from './extension-identity.js';
 
 export interface Session {
   id: string;
@@ -43,6 +44,7 @@ const number = (value: unknown, fallback: number): number =>
   value === undefined ? fallback : Number(value);
 
 export class BrowserController {
+  connectionVersion = 0;
   private browser?: Browser;
   private connecting?: Promise<Browser>;
   private context?: BrowserContext;
@@ -68,10 +70,11 @@ export class BrowserController {
     if (this.connecting) return this.connecting;
     this.connecting = (async () => {
       const browser = await chromium.connectOverCDP(await resolveEndpoint(this.config.browser), {
-        timeout: 10_000,
+        timeout: this.config.connectTimeoutMs ?? 60_000,
         noDefaults: true,
       });
       this.browser = browser;
+      this.connectionVersion++;
       this.context = browser.contexts()[0];
       if (!this.context) throw new Error('Browser has no default context.');
       this.context.setDefaultTimeout(this.config.actionTimeoutMs);
@@ -90,6 +93,25 @@ export class BrowserController {
     } finally {
       this.connecting = undefined;
     }
+  }
+  async extensionConnections(): Promise<string[]> {
+    await this.connect();
+    const origin = await extensionOrigin;
+    const workers = this.context!.serviceWorkers().filter(
+      (worker) => worker.url() === `${origin}background.js`,
+    );
+    const results = await Promise.allSettled(
+      workers.map((worker) =>
+        deadline(
+          worker.evaluate('globalThis.__browserBridgeConnectionId ?? null'),
+          2000,
+          'Extension identity',
+        ),
+      ),
+    );
+    return results.flatMap((result) =>
+      result.status === 'fulfilled' && typeof result.value === 'string' ? [result.value] : [],
+    );
   }
   private async attach(page: Page): Promise<Tab> {
     for (const tab of this.tabs.values()) if (tab.page === page) return tab;

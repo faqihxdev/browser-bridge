@@ -8,9 +8,32 @@ const schema = (properties: Record<string, unknown>, required: string[] = []) =>
   additionalProperties: true,
 });
 const target = {
-  tabId: { ...string, description: 'Stable target ID from browser_tabs or browser_open.' },
+  browser: {
+    ...string,
+    description:
+      'Browser name or stable ID from browser_list. Overrides this agent session selection for this call.',
+  },
+  tabId: {
+    ...string,
+    description:
+      'Complete browser-qualified tab ID from browser_tabs or browser_open. Routes to that browser even after selecting another browser.',
+  },
 };
 export const tools = [
+  {
+    name: 'browser_list',
+    op: 'browsers',
+    description:
+      'Discover installed and configured Chromium browsers without attaching or changing focus. Returns stable IDs, names, debugging setup URLs and verified extension state. Set refresh=true after enabling debugging. Browser names must be unambiguous.',
+    inputSchema: schema({ refresh: boolean }),
+  },
+  {
+    name: 'browser_select',
+    op: 'select',
+    description:
+      'Select a browser by name or ID for this agent session. Other agents keep their own selection. Selecting does not change foreground focus or connect until an action needs it. Existing tab IDs continue routing to their original browser.',
+    inputSchema: schema({ browser: target.browser }, ['browser']),
+  },
   {
     name: 'browser_status',
     op: 'status',
@@ -22,14 +45,14 @@ export const tools = [
     name: 'browser_tabs',
     op: 'tabs',
     description: 'List existing browser tabs and their stable IDs without changing focus.',
-    inputSchema: schema({}),
+    inputSchema: schema({ browser: target.browser }),
   },
   {
     name: 'browser_open',
     op: 'open',
     description:
       'Open and own a background tab. Set focus=true only when foreground interaction is intended.',
-    inputSchema: schema({ url: string, focus: boolean }),
+    inputSchema: schema({ browser: target.browser, url: string, focus: boolean }),
   },
   {
     name: 'browser_snapshot',
@@ -113,11 +136,16 @@ export const tools = [
     name: 'browser_api',
     op: 'api',
     description:
-      'Call an installed extension browser API. Supply namespace, method and positional args array, for example tabs/query/[{}] or bookmarks/search/["work"]. Supports tabs, windows, tabGroups, bookmarks, history, downloads, cookies, sessions, management, browsingData, privacy, contentSettings, topSites and fontSettings. Browser permissions still apply.',
-    inputSchema: schema({ namespace: string, method: string, args: { type: 'array', items: {} } }, [
-      'namespace',
-      'method',
-    ]),
+      'Call the verified extension in the selected browser. Supply namespace, method and positional args array, for example tabs/query/[{}] or bookmarks/search/["work"]. Supports tabs, windows, tabGroups, bookmarks, history, downloads, cookies, sessions, management, browsingData, privacy, contentSettings, topSites and fontSettings. API tab/window IDs are native browser integers. Use browser_tabs IDs only with the ordinary page tools. Browser permissions still apply.',
+    inputSchema: schema(
+      {
+        browser: target.browser,
+        namespace: string,
+        method: string,
+        args: { type: 'array', items: {} },
+      },
+      ['namespace', 'method'],
+    ),
   },
   {
     name: 'browser_desktop',
@@ -145,7 +173,7 @@ export const tools = [
     name: 'browser_batch',
     op: 'batch',
     description:
-      'Run up to 100 ordered operations in one agent round trip. Each entry is {op,args}. Optional tabId is inherited by each entry. Operations use controller names such as snapshot, act, navigate, evaluate, screenshot, api, cdp. Stops at the first error and returns completed results.',
+      'Run up to 100 ordered operations in one agent round trip in one browser. Each entry is {op,args}. Optional browser and tabId apply to the batch. Operations use controller names such as snapshot, act, navigate, evaluate, screenshot, api, cdp. Cross-browser batches are rejected before executing. Stops at the first error and returns completed results.',
     inputSchema: schema(
       {
         ...target,

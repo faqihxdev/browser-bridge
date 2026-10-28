@@ -5,9 +5,19 @@ import { join } from 'node:path';
 
 export interface Config {
   browser: string;
+  browsers?: BrowserDefinition[];
+  connectTimeoutMs?: number;
   idleMs: number;
   actionTimeoutMs: number;
   navigationTimeoutMs: number;
+}
+export interface BrowserDefinition {
+  id: string;
+  name?: string;
+  browser?: string;
+  aliases?: string[];
+  userDataDir?: string;
+  endpoint?: string;
 }
 export const home =
   process.env.BROWSER_BRIDGE_HOME ??
@@ -19,6 +29,8 @@ export const pipe =
     : join(home, 'controller.sock');
 export const defaults: Config = {
   browser: 'msedge',
+  browsers: [],
+  connectTimeoutMs: 60_000,
   idleMs: 600_000,
   actionTimeoutMs: 5_000,
   navigationTimeoutMs: 30_000,
@@ -36,8 +48,34 @@ export async function loadConfig(): Promise<Config> {
     ...supplied,
     browser: process.env.BROWSER_BRIDGE_BROWSER ?? supplied.browser ?? defaults.browser,
   };
-  for (const value of [config.idleMs, config.actionTimeoutMs, config.navigationTimeoutMs]) {
-    if (!Number.isFinite(value) || value < 1) throw new Error('Timeouts must be positive numbers.');
+  if (typeof config.browser !== 'string' || !config.browser.trim())
+    throw new Error('browser must be a browser name, configured ID or CDP URL.');
+  if (!Array.isArray(config.browsers)) throw new Error('browsers must be an array.');
+  const ids = new Set<string>();
+  for (const browser of config.browsers) {
+    if (!browser || !/^[a-z0-9][a-z0-9._-]*$/.test(browser.id) || ids.has(browser.id))
+      throw new Error('Each browser needs a unique lowercase id using letters, numbers, . _ or -.');
+    ids.add(browser.id);
+    for (const key of ['name', 'browser', 'userDataDir', 'endpoint'] as const)
+      if (browser[key] !== undefined && (typeof browser[key] !== 'string' || !browser[key]!.trim()))
+        throw new Error(`Browser ${browser.id}: ${key} must be a nonempty string.`);
+    if (!browser.endpoint && !browser.userDataDir)
+      throw new Error(`Browser ${browser.id} needs endpoint or userDataDir.`);
+    if (
+      browser.aliases !== undefined &&
+      (!Array.isArray(browser.aliases) ||
+        browser.aliases.some((alias) => typeof alias !== 'string' || !alias.trim()))
+    )
+      throw new Error(`Browser ${browser.id}: aliases must be nonempty strings.`);
+  }
+  for (const value of [
+    config.idleMs,
+    config.actionTimeoutMs,
+    config.navigationTimeoutMs,
+    config.connectTimeoutMs,
+  ]) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 1)
+      throw new Error('Timeouts must be positive numbers.');
   }
   return config;
 }

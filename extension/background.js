@@ -1,4 +1,10 @@
 let port;
+const profile = chrome.storage.local.get('browserBridgeProfileId').then(async (stored) => {
+  if (typeof stored.browserBridgeProfileId === 'string') return stored.browserBridgeProfileId;
+  const id = crypto.randomUUID();
+  await chrome.storage.local.set({ browserBridgeProfileId: id });
+  return id;
+});
 const pending = new Map();
 const namespaces = new Set([
   'tabs',
@@ -26,11 +32,21 @@ const namespaces = new Set([
 let connectionError = 'Connecting to the local controller.';
 function connect() {
   if (port) return;
+  const connectionId = crypto.randomUUID();
+  globalThis.__browserBridgeConnectionId = connectionId;
   port = chrome.runtime.connectNative('dev.browser_bridge');
+  const connectedPort = port;
   port.onMessage.addListener(async (packet) => {
     if (packet.event === 'ready') {
-      connectionError = '';
-      await chrome.action.setBadgeText({ text: '' });
+      try {
+        if (port !== connectedPort) return;
+        await request('extension-register', { connectionId, profileId: await profile });
+        connectionError = '';
+        await chrome.action.setBadgeText({ text: '' });
+      } catch (error) {
+        connectionError = error.message;
+        await chrome.action.setBadgeText({ text: '!' });
+      }
       return;
     }
     if (packet.event === 'state') {
@@ -75,8 +91,10 @@ function connect() {
     }
   });
   port.onDisconnect.addListener(() => {
+    if (port !== connectedPort) return;
     connectionError = chrome.runtime.lastError?.message || 'Local controller disconnected.';
     port = null;
+    globalThis.__browserBridgeConnectionId = null;
     for (const callback of pending.values()) {
       clearTimeout(callback.timer);
       callback.reject(new Error(connectionError));

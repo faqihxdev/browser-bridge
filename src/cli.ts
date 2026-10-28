@@ -23,7 +23,7 @@ async function main(): Promise<void> {
     );
     return;
   }
-  if (['status', 'tabs', 'call', 'doctor', 'stop'].includes(command)) {
+  if (['status', 'browsers', 'tabs', 'call', 'doctor', 'stop'].includes(command)) {
     const client = await connectController(
       process.env.BROWSER_BRIDGE_AGENT ?? 'CLI',
       'agent',
@@ -32,7 +32,9 @@ async function main(): Promise<void> {
     try {
       let op = command;
       if (command === 'stop') op = 'shutdown';
-      let input = {};
+      const browserIndex = args.indexOf('--browser');
+      let input: Record<string, unknown> =
+        browserIndex >= 0 ? { browser: args[browserIndex + 1] } : {};
       if (command === 'call') {
         op = args[0] ?? 'status';
         const fileIndex = args.indexOf('--args-file');
@@ -41,7 +43,7 @@ async function main(): Promise<void> {
         );
       }
       if (command === 'doctor') {
-        const tabs = (await client.call('tabs')) as unknown[];
+        const tabs = (await client.call('tabs', input)) as unknown[];
         const status = await client.call('status');
         console.log(
           JSON.stringify(
@@ -59,7 +61,7 @@ async function main(): Promise<void> {
     return;
   }
   console.log(
-    'Browser Bridge\n\nsetup [--codex]  Register Native Messaging and generate agent settings\nmcp              MCP stdio adapter for an agent\ndaemon           Run the shared controller in the foreground\nstatus           Controller and extension status\ndoctor           Verify the browser connection\nstop             Disconnect the controller and restore indicators\ntabs             List tabs without changing focus\ncall OP [JSON]   Execute an operation; --args-file PATH reads JSON safely',
+    'Browser Bridge\n\nsetup [--codex]  Register Native Messaging and generate agent settings\nmcp              MCP stdio adapter for an agent\ndaemon           Run the shared controller in the foreground\nstatus           Controller and extension status\nbrowsers         Discover browser names, IDs and debugging state\ndoctor           Verify the browser connection; --browser NAME selects a browser\nstop             Disconnect the controller and restore indicators\ntabs             List tabs without changing focus; --browser NAME selects a browser\ncall OP [JSON]   Execute an operation; --args-file PATH reads JSON safely',
   );
 }
 main().catch((error) => {

@@ -4,7 +4,7 @@ import { open, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { credential, deadline, home, loadConfig, message, pipe } from './config.js';
 import { Wire, type Packet } from './wire.js';
-import { BrowserController } from './browser.js';
+import { BrowserManager } from './manager.js';
 
 export async function runDaemon(): Promise<void> {
   const config = await loadConfig();
@@ -40,11 +40,13 @@ export async function runDaemon(): Promise<void> {
     string,
     { wire: Wire; resolve: (value: unknown) => void; reject: (error: Error) => void }
   >();
-  const controller = new BrowserController(config, async (args) => {
-    const extension = [...extensions].at(-1);
+  const sessions = new Map<string, Wire>();
+  const controller = new BrowserManager(config, async (connectionId, args) => {
+    const sessionId = controller.extensionSession(connectionId);
+    const extension = sessionId && sessions.get(sessionId);
     if (!extension)
       throw new Error(
-        'Browser Bridge extension is not connected. Load dist/extension after running setup.',
+        'The selected browser extension disconnected. Reload Browser Bridge in that browser.',
       );
     const id = randomUUID();
     try {
@@ -63,13 +65,21 @@ export async function runDaemon(): Promise<void> {
   let active = 0;
   let lastActivity = Date.now();
   let closing = false;
-  let lastState = '';
-  const broadcast = () => {
-    const state = controller.status();
-    const encoded = JSON.stringify(state);
-    if (encoded === lastState) return;
-    lastState = encoded;
-    for (const extension of extensions) extension.send({ event: 'state', args: state });
+  const states = new Map<Wire, string>();
+  const broadcast = async () => {
+    for (const [sessionId, extension] of sessions) {
+      if (!extensions.has(extension)) continue;
+      const state = await controller.status({
+        id: sessionId,
+        label: 'Extension',
+        role: 'extension',
+        active: true,
+      });
+      const encoded = JSON.stringify(state);
+      if (encoded === states.get(extension)) continue;
+      states.set(extension, encoded);
+      extension.send({ event: 'state', args: state });
+    }
   };
   const server = createServer((socket) => {
     const wire = new Wire(socket);
@@ -82,6 +92,8 @@ export async function runDaemon(): Promise<void> {
       session.active = false;
       peers.delete(wire);
       extensions.delete(wire);
+      sessions.delete(session.id);
+      states.delete(wire);
       lastActivity = Date.now();
       for (const [id, request] of extensionRequests)
         if (request.wire === wire) {
@@ -108,6 +120,7 @@ export async function runDaemon(): Promise<void> {
           authenticated = true;
           clearTimeout(authTimer);
           peers.add(wire);
+          sessions.set(session.id, wire);
           session.label = String(packet.args?.label ?? 'Agent').slice(0, 80);
           session.role = packet.args?.role === 'extension' ? 'extension' : 'agent';
           if (session.role === 'extension') extensions.add(wire);
@@ -141,14 +154,14 @@ export async function runDaemon(): Promise<void> {
                   pid: process.pid,
                   clients: peers.size - extensions.size,
                   extensionConnected: extensions.size > 0,
-                  ...controller.status(),
+                  ...(await controller.status(session)),
                 }
               : await controller.execute(session, packet.op ?? '', packet.args ?? {});
           wire.send({ id: packet.id, result });
         } finally {
           active--;
           lastActivity = Date.now();
-          broadcast();
+          await broadcast();
         }
       } catch (error) {
         wire.send({ id: packet.id, error: message(error) });
