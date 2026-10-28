@@ -1,0 +1,20 @@
+{
+  "name": "browser-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local browser control for agents, with shared sessions and visible activity.",
+  "type": "module",
+  "packageManager": "pnpm@11.1.1",
+  "engines": { "node": ">=24" },
+  "bin": { "browser-bridge": "dist/cli.js" },
+  "scripts": {
+    "build": "tsc && node scripts/build.mjs",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:integration": "node --import tsx --test tests/integration/*.test.ts",
+    "start": "node dist/cli.js daemon",
+    "status": "node dist/cli.js status",
+    "setup": "node dist/cli.js setup",
+    "mcp": "node dist/cli.js mcp"
+  }
+}
