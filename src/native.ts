@@ -5,8 +5,10 @@ import type { Data, Packet } from './wire.js';
 
 export function encodeNative(value: unknown): Buffer {
   const body = Buffer.from(JSON.stringify(value));
-  if (body.length > 1024 * 1024) throw new Error('Native response exceeds 1 MiB. Request a smaller result.');
-  const header = Buffer.alloc(4); header.writeUInt32LE(body.length);
+  if (body.length > 1024 * 1024)
+    throw new Error('Native response exceeds 1 MiB. Request a smaller result.');
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(body.length);
   return Buffer.concat([header, body]);
 }
 export class NativeDecoder {
@@ -26,19 +28,35 @@ export class NativeDecoder {
 }
 export async function runNative(): Promise<void> {
   const client = await connectController('Browser Bridge extension', 'extension');
-  const write = (value: unknown) => { process.stdout.write(encodeNative(value)); };
-  client.wire.on('packet', (packet: Packet) => { if (packet.event) write(packet); });
+  const write = (value: unknown) => {
+    process.stdout.write(encodeNative(value));
+  };
+  client.wire.on('packet', (packet: Packet) => {
+    if (packet.event) write(packet);
+  });
   client.wire.on('closed', () => process.exit(0));
   const decoder = new NativeDecoder();
   process.stdin.on('data', (chunk: Buffer) => {
     try {
       for (const input of decoder.push(chunk)) {
         const id = String(input.id ?? randomUUID());
-        void client.call(String(input.op), (input.args ?? {}) as Data).then(result => {
-          try { write({ id, result }); } catch (error) { write({ id, error: message(error) }); }
-        }, error => write({ id, error: message(error) }));
+        void client.call(String(input.op), (input.args ?? {}) as Data).then(
+          (result) => {
+            try {
+              write({ id, result });
+            } catch (error) {
+              write({ id, error: message(error) });
+            }
+          },
+          (error) => write({ id, error: message(error) }),
+        );
       }
-    } catch (error) { console.error(message(error)); client.close(); process.exitCode = 1; process.stdin.destroy(); }
+    } catch (error) {
+      console.error(message(error));
+      client.close();
+      process.exitCode = 1;
+      process.stdin.destroy();
+    }
   });
   process.stdin.once('end', () => client.close());
   write({ event: 'ready' });

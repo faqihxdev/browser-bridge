@@ -2,9 +2,13 @@ name: Checks
 on: [push, pull_request]
 permissions:
   contents: read
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -16,9 +20,15 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
       - run: pnpm check
       - run: pnpm build
       - run: pnpm test
       - if: runner.os == 'Linux'
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright-core install --with-deps chromium
       - run: pnpm test:integration
+      - if: runner.os == 'Windows'
+        run: |
+          pnpm exec playwright-core install chromium
+          pnpm setup:local
+          pnpm test:extension

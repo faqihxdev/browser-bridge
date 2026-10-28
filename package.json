@@ -18,8 +18,14 @@
     "test:integration": "node --import tsx --test tests/integration/*.test.ts",
     "start": "node dist/cli.js daemon",
     "status": "node dist/cli.js status",
-    "setup": "node dist/cli.js setup",
-    "mcp": "node dist/cli.js mcp"
+    "setup:local": "node dist/cli.js setup",
+    "doctor": "node dist/cli.js doctor",
+    "stop": "node dist/cli.js stop",
+    "test:extension": "node --import tsx --test tests/extension/*.test.ts",
+    "mcp": "node dist/cli.js mcp",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "benchmark": "node scripts/benchmark.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -27,6 +33,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "prettier": "3.9.10",
     "tsx": "4.23.15",
     "typescript": "7.0.2"
   }
