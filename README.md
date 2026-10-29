@@ -32,15 +32,29 @@ pnpm build
 pnpm setup:local --codex
 ```
 
-In each browser, open `chrome://inspect/#remote-debugging` and enable remote debugging. In `chrome://extensions`, enable Developer mode and load the unpacked `dist/extension` folder. Chromium browsers redirect these addresses to their own internal pages. Approve the browser's connection prompt when an agent attaches.
+In each browser, enable Developer mode at `chrome://extensions` and load unpacked `dist/extension`. Chromium browsers redirect these addresses to their own internal pages.
+
+Choose a connection:
+
+- **Existing profile:** enable remote debugging at `chrome://inspect/#remote-debugging`. Approve each new connection when prompted.
+- **Unattended:** launch with a custom `--user-data-dir`, fixed nonzero `--remote-debugging-port` and `--remote-debugging-address=127.0.0.1`. Save these flags in every launch shortcut. Configure its endpoint in `%LOCALAPPDATA%\BrowserBridge\config.json`:
+
+  ```json
+  {
+    "browser": "edge-agent",
+    "browsers": [{ "id": "edge-agent", "browser": "edge", "endpoint": "http://127.0.0.1:19224" }]
+  }
+  ```
+
+  This avoids the inspect-page approval prompt. Start with a fresh profile and sign in manually; copying encrypted profile data is unreliable. Port `0` enables the automation flag and can affect sign-in. Fixed-port Google sign-in was verified in Edge; website behavior can change.
 
 `--codex` adds the MCP server to your user Codex configuration. Restart the agent connection to load it. For other MCP clients, copy the generated `mcpServers` entry from `%LOCALAPPDATA%\BrowserBridge\mcp.json`.
 
-Ask your agent to "control Brave" or "control Edge". One MCP connection exposes all browsers. Each agent keeps its own selection; existing tab IDs retain their browser. Duplicate names require the browser ID from discovery.
+Ask your agent to "control Brave" or "control Edge". Each agent keeps its own selection; existing tab IDs retain their browser. Duplicate names require the browser ID from discovery. Foreground focus is preserved unless requested.
 
 The manager starts with the first agent or extension connection and exits ten minutes after the last disconnects. `pnpm browsers` lists discovered browsers. `pnpm doctor --browser Brave` checks attachment; `pnpm status` reports active control; `pnpm stop` disconnects and restores indicators.
 
-Settings and credentials live in `%LOCALAPPDATA%\BrowserBridge`. In `config.json`, `browser` sets the default name or ID. Discovery covers Edge, Chrome, Brave, Vivaldi, Opera/GX and Chromium, including Windows Scoop installs. Add `browsers` entries with `id`, `name`, optional `aliases`, and `userDataDir` or `endpoint` for custom instances. `BROWSER_BRIDGE_HOME` selects a separate runtime directory.
+Discovery covers Edge, Chrome, Brave, Vivaldi, Opera/GX and Chromium, including Scoop installs. Custom `browsers` entries accept `name`, `aliases` and `userDataDir`. Settings and credentials stay in `%LOCALAPPDATA%\BrowserBridge`; `BROWSER_BRIDGE_HOME` selects a separate runtime directory.
 
 ## Development
 
@@ -57,7 +71,7 @@ Use Conventional Commits and `<name>/<type>-<description>` branches. Keep creden
 
 ## Scope
 
-The current backend attaches to Chromium browsers. Firefox and Safari need separate backends. Independently named profiles use separate user-data directories. Browser-owned approval prompts and debugging banners still apply.
+The backend supports Chromium browsers. Firefox and Safari need separate backends. Independently named profiles use separate user-data directories. Connection prompts and debugging banners depend on the connection mode and browser.
 
 Control runs locally; requested results still reach your chosen agent. Ownership coordinates clients but does not isolate shared cookies or storage. Raw CDP and extension APIs are privileged escape hatches.
 
