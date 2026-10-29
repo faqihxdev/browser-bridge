@@ -2,6 +2,8 @@
 
 Control your existing browsers from any local MCP agent, with visible activity and shared tab ownership.
 
+Customize browser routing, cursor, favicon and pacing. The [ChatGPT extension](https://learn.chatgpt.com/docs/chrome-extension) offers integrated side chat and website permission controls; Browser Bridge emphasizes agent choice and customization.
+
 [Checks](https://github.com/faqihxdev/browser-bridge/actions/workflows/checks.yml)
 
 ## Architecture
