@@ -36,6 +36,8 @@ pnpm setup:local --codex
 
 In each browser, enable Developer mode at `chrome://extensions` and load unpacked `dist/extension`. Chromium browsers redirect these addresses to their own internal pages.
 
+Load unpacked registers the extension persistently in that profile. The `--load-extension` flag loads it only for launches that supply the flag.
+
 Choose a connection:
 
 - **Existing profile:** enable remote debugging at `chrome://inspect/#remote-debugging`. Approve each new connection when prompted.
@@ -57,6 +59,8 @@ Ask your agent to "control Brave" or "control Edge". Each agent keeps its own se
 The manager starts with the first agent or extension connection and exits ten minutes after the last disconnects. `pnpm browsers` lists discovered browsers. `pnpm doctor --browser Brave` checks attachment; `pnpm status` reports active control; `pnpm stop` disconnects and restores indicators.
 
 Discovery covers Edge, Chrome, Brave, Vivaldi, Opera/GX and Chromium, including Scoop installs. Custom `browsers` entries accept `name`, `aliases` and `userDataDir`. Settings and credentials stay in `%LOCALAPPDATA%\BrowserBridge`; `BROWSER_BRIDGE_HOME` selects a separate runtime directory.
+
+On Windows, optional `browsers[].windowsJumpList` settings accept `appId`, `cacheFile`, `executable` and common launch `arguments`. The controller watches that app's taskbar cache and restores normal/private window tasks through the Windows shell API when the browser drops its launch flags. Use the pinned shortcut's profile-specific AppUserModelID. PowerShell runs only during repairs.
 
 ## Development
 

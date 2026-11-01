@@ -16,6 +16,12 @@ export interface BrowserDefinition {
   name?: string;
   browser?: string;
   aliases?: string[];
+  windowsJumpList?: {
+    appId: string;
+    cacheFile: string;
+    executable: string;
+    arguments: string;
+  };
   userDataDir?: string;
   endpoint?: string;
 }
@@ -67,6 +73,16 @@ export async function loadConfig(): Promise<Config> {
         browser.aliases.some((alias) => typeof alias !== 'string' || !alias.trim()))
     )
       throw new Error(`Browser ${browser.id}: aliases must be nonempty strings.`);
+    if (browser.windowsJumpList !== undefined) {
+      for (const key of ['appId', 'cacheFile', 'executable', 'arguments'] as const)
+        if (
+          typeof browser.windowsJumpList?.[key] !== 'string' ||
+          !browser.windowsJumpList[key].trim()
+        )
+          throw new Error(
+            `Browser ${browser.id}: windowsJumpList.${key} must be a nonempty string.`,
+          );
+    }
   }
   for (const value of [
     config.idleMs,

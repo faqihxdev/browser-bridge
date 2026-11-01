@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { credential, deadline, home, loadConfig, message, pipe } from './config.js';
 import { Wire, type Packet } from './wire.js';
 import { BrowserManager } from './manager.js';
+import { maintainJumpLists } from './jumplist.js';
 
 export async function runDaemon(): Promise<void> {
   const config = await loadConfig();
@@ -65,6 +66,7 @@ export async function runDaemon(): Promise<void> {
   let active = 0;
   let lastActivity = Date.now();
   let closing = false;
+  let jumpLists: Promise<() => Promise<void>> = Promise.resolve(async () => {});
   const states = new Map<Wire, string>();
   const broadcast = async () => {
     for (const [sessionId, extension] of sessions) {
@@ -173,6 +175,8 @@ export async function runDaemon(): Promise<void> {
     if (closing) return;
     closing = true;
     clearInterval(idle);
+    const closeJumpLists = await jumpLists;
+    await closeJumpLists();
     await controller.dispose();
     for (const peer of peers) peer.socket.destroy();
     server.close();
@@ -199,6 +203,7 @@ export async function runDaemon(): Promise<void> {
       { mode: 0o600 },
     );
     console.error(`Browser Bridge listening on ${pipe}`);
+    jumpLists = maintainJumpLists(config.browsers);
   } catch (error) {
     await shutdown();
     throw error;
