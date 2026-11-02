@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 6) return;
+  if (globalThis.__browserBridge?.version === 7) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -12,7 +12,7 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 6,
+    version: 7,
     documentId,
     refs: new Map(),
     sequence: 0,
@@ -49,24 +49,30 @@
     host.style.cssText =
       'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483647;contain:strict;';
     const root = host.attachShadow({ mode: 'closed' });
-    const style = document.createElement('style');
-    style.textContent =
-      ':host{pointer-events:none} .cursor{position:absolute;left:0;top:0;width:22px;height:22px;will-change:transform} .pointer,.pointer svg{display:block;width:100%;height:100%} .pulse{position:absolute;inset:-8px;border:1px solid #aaa;border-radius:50%;opacity:0} @media(prefers-reduced-motion:reduce){.pulse{animation:none!important}}';
     cursor = document.createElement('div');
     cursor.className = 'cursor';
+    // CSSOM styles work on nonce-only pages without inserting an inline stylesheet.
+    cursor.style.cssText =
+      'position:absolute;left:0;top:0;width:22px;height:22px;will-change:transform;';
     cursor.style.transform = `translate3d(${state.position.x}px,${state.position.y}px,0)`;
     const arrow = document.createElement('div');
     arrow.className = 'pointer';
+    arrow.style.cssText = 'display:block;width:100%;height:100%;';
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '22');
+    svg.setAttribute('height', '22');
+    svg.style.cssText = 'display:block;width:100%;height:100%;';
     const path = document.createElementNS(svg.namespaceURI, 'path');
     for (const [key, value] of Object.entries(pointerAttributes)) path.setAttribute(key, value);
     svg.append(path);
     arrow.append(svg);
     const pulse = document.createElement('div');
     pulse.className = 'pulse';
+    pulse.style.cssText =
+      'position:absolute;inset:-8px;border:1px solid #aaa;border-radius:50%;opacity:0;';
     cursor.append(pulse, arrow);
-    root.append(style, cursor);
+    root.append(cursor);
     document.documentElement.append(host);
   }
   function faviconUrl() {

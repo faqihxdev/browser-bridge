@@ -29,7 +29,7 @@ test(
       if (request.url === '/trusted')
         response.setHeader(
           'Content-Security-Policy',
-          "require-trusted-types-for 'script'; trusted-types 'none'",
+          "require-trusted-types-for 'script'; trusted-types 'none'; style-src 'nonce-fixture'",
         );
       response.end(
         `<!doctype html><html><head><link rel="icon" href="/original.svg"><link rel="shortcut icon" href="/other.ico"><title>Bridge fixture</title></head><body><h1>Browser Bridge verification</h1><label>Name <input id="name"></label><input type="password" value="private-value"><button id="save" onclick="document.querySelector('#result').textContent=document.querySelector('#name').value">Save</button><p id="result"></p><input id="file" type="file"><a href="/next">Next</a><iframe srcdoc="<button>Frame button</button>"></iframe></body></html>`,
@@ -340,11 +340,26 @@ test(
       await t.test(
         'a dialog can be read and handled while an evaluation waits for it',
         async () => {
+          await call('claim');
           const evaluation = call('evaluate', {
             expression: 'confirm("Bridge test confirmation")',
           });
-          await new Promise((resolve) => setTimeout(resolve, 50));
-          const pending = (await call('dialog')) as { message: string };
+          let pending: { message: string };
+          const deadline = Date.now() + 2000;
+          while (true) {
+            try {
+              pending = (await call('dialog')) as { message: string };
+              break;
+            } catch (error) {
+              if (
+                !(error instanceof Error) ||
+                !error.message.includes('No pending dialog') ||
+                Date.now() > deadline
+              )
+                throw error;
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+          }
           assert.equal(pending.message, 'Bridge test confirmation');
           await call('dialog', { accept: false });
           assert.equal(await evaluation, false);
@@ -400,7 +415,7 @@ test(
           }
         },
       );
-      await t.test('cursor and favicon work under enforced Trusted Types', async (t) => {
+      await t.test('indicators survive Trusted Types and nonce-only CSS', async (t) => {
         await call('navigate', { url: url + '/trusted' });
         const observer = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, {
           noDefaults: true,
@@ -421,6 +436,18 @@ test(
           }),
           true,
           'The fixture enforces Trusted Types without a default policy',
+        );
+        assert.equal(
+          await page.evaluate(() => {
+            const style = document.createElement('style');
+            style.textContent = 'body{color:red}';
+            document.head.append(style);
+            const blocked = style.sheet === null;
+            style.remove();
+            return blocked;
+          }),
+          true,
+          'The fixture rejects stylesheets without the required nonce',
         );
         await call('snapshot');
         await page.locator('link[data-browser-bridge-icon]').waitFor({ state: 'attached' });
@@ -449,6 +476,9 @@ test(
           const arrow = cursor.children.find((node: any) => node.attributes?.includes('pointer'));
           const svg = arrow.children.find((node: any) => node.localName === 'svg');
           assert.ok(svg.children.some((node: any) => node.localName === 'path'));
+          const { model: svgModel } = await cdp.send('DOM.getBoxModel', { nodeId: svg.nodeId });
+          assert.equal(svgModel.width, 22);
+          assert.equal(svgModel.height, 22);
           await call('act', { action: 'fill', selector: '#name', text: 'Trusted Types passed' });
           await call('act', { action: 'click', selector: '#save' });
           assert.equal(await page.locator('#result').textContent(), 'Trusted Types passed');
