@@ -26,15 +26,21 @@ test(
         return;
       }
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
+      if (request.url === '/trusted')
+        response.setHeader(
+          'Content-Security-Policy',
+          "require-trusted-types-for 'script'; trusted-types 'none'",
+        );
       response.end(
         `<!doctype html><html><head><link rel="icon" href="/original.svg"><link rel="shortcut icon" href="/other.ico"><title>Bridge fixture</title></head><body><h1>Browser Bridge verification</h1><label>Name <input id="name"></label><input type="password" value="private-value"><button id="save" onclick="document.querySelector('#result').textContent=document.querySelector('#name').value">Save</button><p id="result"></p><input id="file" type="file"><a href="/next">Next</a><iframe srcdoc="<button>Frame button</button>"></iframe></body></html>`,
       );
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    t.after(() => server.close());
     const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
     const cdpPort = await port();
+    // Installed Edge can redirect temporary profiles through the user's enterprise policies.
     const browser = await chromium.launch({
-      ...(process.platform === 'win32' ? { channel: 'msedge' } : {}),
       headless: true,
       args: [`--remote-debugging-port=${cdpPort}`],
     });
@@ -394,6 +400,69 @@ test(
           }
         },
       );
+      await t.test('cursor and favicon work under enforced Trusted Types', async (t) => {
+        await call('navigate', { url: url + '/trusted' });
+        const observer = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, {
+          noDefaults: true,
+        });
+        t.after(() => observer.close());
+        const page = observer
+          .contexts()[0]!
+          .pages()
+          .find((page) => page.url().endsWith('/trusted'))!;
+        assert.equal(
+          await page.evaluate(() => {
+            try {
+              document.createElement('div').innerHTML = '<span>Blocked</span>';
+              return false;
+            } catch {
+              return true;
+            }
+          }),
+          true,
+          'The fixture enforces Trusted Types without a default policy',
+        );
+        await call('snapshot');
+        await page.locator('link[data-browser-bridge-icon]').waitFor({ state: 'attached' });
+        const cdp = await page.context().newCDPSession(page);
+        try {
+          const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+          const findCursor = (node: any): any => {
+            const attributes: string[] = node.attributes ?? [];
+            if (
+              attributes.some(
+                (value, index) =>
+                  index % 2 === 0 && value === 'class' && attributes[index + 1] === 'cursor',
+              )
+            )
+              return node;
+            for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
+              const found = findCursor(child);
+              if (found) return found;
+            }
+          };
+          const cursor = findCursor(root);
+          assert.ok(cursor, 'The cursor mounts despite HTML sink restrictions');
+          const { model } = await cdp.send('DOM.getBoxModel', { nodeId: cursor.nodeId });
+          assert.equal(model.width, 22);
+          assert.equal(model.height, 22);
+          const arrow = cursor.children.find((node: any) => node.attributes?.includes('pointer'));
+          const svg = arrow.children.find((node: any) => node.localName === 'svg');
+          assert.ok(svg.children.some((node: any) => node.localName === 'path'));
+          await call('act', { action: 'fill', selector: '#name', text: 'Trusted Types passed' });
+          await call('act', { action: 'click', selector: '#save' });
+          assert.equal(await page.locator('#result').textContent(), 'Trusted Types passed');
+          await call('release');
+          assert.deepEqual(
+            await page
+              .locator('link[rel~="icon"]')
+              .evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
+            ['/original.svg', '/other.ico'],
+          );
+        } finally {
+          await cdp.detach();
+        }
+      });
       await t.test('disconnect restores indicators without closing browser tabs', async () => {
         await controller.releaseSession(first.id);
         assert.equal((controller.status().claims as unknown[]).length, 0);
@@ -403,7 +472,6 @@ test(
     } finally {
       await controller.dispose();
       await browser.close();
-      server.close();
     }
   },
 );

@@ -71,7 +71,7 @@ pnpm test:integration
 pnpm test:extension
 ```
 
-The extension test needs setup registration and Playwright Chromium, installed with `pnpm exec playwright-core install chromium`. Tests use isolated browser profiles. CI runs types, build and browser tests on Windows and Linux.
+Browser tests use isolated Playwright Chromium, installed with `pnpm exec playwright-core install chromium`. Extension tests also need setup registration. CI runs types, build and browser tests on Windows and Linux.
 
 Use Conventional Commits and `<name>/<type>-<description>` branches. Keep credentials, screenshots and browser content out of Git.
 

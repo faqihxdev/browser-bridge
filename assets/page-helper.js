@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 5) return;
+  if (globalThis.__browserBridge?.version === 6) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -12,7 +12,7 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 5,
+    version: 6,
     documentId,
     refs: new Map(),
     sequence: 0,
@@ -26,10 +26,21 @@
   const actionPauseMs = 150;
   let host, cursor, icon, observer;
   const originals = new Map();
+  const pointerPathData =
+    'M4.1 2.8 21 9.7Q22.4 10.3 20.9 10.9L14.1 13.6Q13.7 13.7 13.6 14.1L10.9 20.9Q10.3 22.4 9.7 21L2.8 4.1Q2 2 4.1 2.8Z';
+  const pointerAttributes = {
+    d: pointerPathData,
+    fill: '#fff',
+    stroke: '#000',
+    'stroke-width': '1.6',
+    'stroke-linejoin': 'round',
+  };
   const pointerPath =
-    '<path d="M4.1 2.8 21 9.7Q22.4 10.3 20.9 10.9L14.1 13.6Q13.7 13.7 13.6 14.1L10.9 20.9Q10.3 22.4 9.7 21L2.8 4.1Q2 2 4.1 2.8Z" fill="#fff" stroke="#000" stroke-width="1.6" stroke-linejoin="round"/>';
-  const pointerSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' + pointerPath + '</svg>';
+    '<path ' +
+    Object.entries(pointerAttributes)
+      .map(([key, value]) => `${key}="${value}"`)
+      .join(' ') +
+    '/>';
   let iconHref, iconSource;
   function visual() {
     if (host?.isConnected) return;
@@ -46,7 +57,12 @@
     cursor.style.transform = `translate3d(${state.position.x}px,${state.position.y}px,0)`;
     const arrow = document.createElement('div');
     arrow.className = 'pointer';
-    arrow.innerHTML = pointerSvg;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    const path = document.createElementNS(svg.namespaceURI, 'path');
+    for (const [key, value] of Object.entries(pointerAttributes)) path.setAttribute(key, value);
+    svg.append(path);
+    arrow.append(svg);
     const pulse = document.createElement('div');
     pulse.className = 'pulse';
     cursor.append(pulse, arrow);
