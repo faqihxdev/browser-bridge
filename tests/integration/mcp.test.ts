@@ -13,25 +13,25 @@ import { NativeDecoder, encodeNative } from '../../src/native.js';
 test(
   'MCP clients route independent browsers and reject unverified native hosts',
   { timeout: 120000 },
-  async () => {
+  async (t) => {
     const server = createServer();
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const port = (server.address() as { port: number }).port;
     await new Promise<void>((resolve) => server.close(() => resolve()));
     const browser = await chromium.launch({
-      ...(process.platform === 'win32' ? { channel: 'msedge' } : {}),
       headless: true,
       args: [`--remote-debugging-port=${port}`],
     });
+    t.after(() => browser.close());
     const secondServer = createServer();
     await new Promise<void>((resolve) => secondServer.listen(0, '127.0.0.1', resolve));
     const secondPort = (secondServer.address() as { port: number }).port;
     await new Promise<void>((resolve) => secondServer.close(() => resolve()));
     const otherBrowser = await chromium.launch({
-      ...(process.platform === 'win32' ? { channel: 'msedge' } : {}),
       headless: true,
       args: [`--remote-debugging-port=${secondPort}`],
     });
+    t.after(() => otherBrowser.close());
     const runtime = await mkdtemp(join(tmpdir(), 'browser-bridge-mcp-'));
     await writeFile(
       join(runtime, 'config.json'),
@@ -229,8 +229,6 @@ test(
     } finally {
       await Promise.all(clients.map((client) => client.close().catch(() => undefined)));
       native?.stdin?.end();
-      await browser.close();
-      await otherBrowser.close();
     }
   },
 );
