@@ -1,6 +1,7 @@
 {
   "name": "browser-bridge",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "description": "Local browser control for agents, with shared sessions and visible activity.",
   "type": "module",

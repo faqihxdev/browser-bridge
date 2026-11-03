@@ -6,6 +6,8 @@ Compared with the [ChatGPT extension](https://learn.chatgpt.com/docs/chrome-exte
 
 [Checks](https://github.com/faqihxdev/browser-bridge/actions/workflows/checks.yml)
 
+![Browser Bridge mockup: a visible cursor runs code in a browser, then releases the tab.](docs/images/browser-control.svg)
+
 ## Architecture
 
 A shared Node.js 24 manager routes MCP agents to persistent Playwright/CDP controllers, one per browser. Authenticated local pipes connect stdio adapters and Native Messaging hosts. The MV3 extension supplies browser APIs and a compact status/stop popup. Its live connection identity is verified inside the selected browser before API routing. Windows UI Automation handles native controls.
