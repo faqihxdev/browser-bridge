@@ -5,7 +5,7 @@
     <path id="cursor" d="M4.1 2.8 21 9.7Q22.4 10.3 20.9 10.9L14.1 13.6Q13.7 13.7 13.6 14.1L10.9 20.9Q10.3 22.4 9.7 21L2.8 4.1Q2 2 4.1 2.8Z" fill="#fff" stroke="#000" stroke-width="1.6" stroke-linejoin="round"/>
     <style>
       text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-      .mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace; }
+      .mono text, text.mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace; }
       .muted { fill: #868686; }
       .ink { fill: #e9e9e9; }
       .code { animation: code 9s infinite; }
