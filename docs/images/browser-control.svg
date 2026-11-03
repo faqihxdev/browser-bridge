@@ -71,17 +71,19 @@
   <rect x=".5" y=".5" width="1079" height="519" rx="18" fill="#141414" stroke="#363636"/>
   <path d="M18 1H1062Q1079 1 1079 18V50H1V18Q1 1 18 1Z" fill="#0e0e0e"/>
   <path d="M1 100V50H6Q16 50 16 40V21Q16 11 26 11H262Q272 11 272 21V40Q272 50 282 50H1079V100Z" fill="#1c1c1c"/>
-  <g class="favicon" stroke="#d9d9d9" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="m39 24-5 5 5 5m10-10 5 5-5 5m-5-13-3 17"/>
-  </g>
-  <use href="#cursor" transform="translate(44 28) scale(.6)" class="ownership"/>
+  <path class="favicon" d="m18 16 4-4-4-4M6 8l-4 4 4 4m8.5-12-5 16" transform="translate(33 20) scale(.75)" fill="none" stroke="#d9d9d9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <use href="#cursor" transform="translate(44 30) scale(.45)" class="ownership"/>
   <text x="67" y="34" font-size="14" class="ink">JavaScript playground</text>
   <path d="m247 25 7 7m0-7-7 7" stroke="#929292" stroke-width="1.3" stroke-linecap="round"/>
   <g class="muted" font-size="14">
     <text x="300" y="34">Documentation</text>
     <path d="M472 29h12m-6-6v12" stroke="#868686" stroke-width="1.5" stroke-linecap="round"/>
   </g>
-  <path d="M32 75H47m-15 0 6-6m-6 6 6 6m33-6H86m0 0-6-6m6 6-6 6M113 71a7 7 0 1 0 1 9m-1-9v6h-6" fill="none" stroke="#929292" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="none" stroke="#929292" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m12 19-7-7 7-7M19 12H5" transform="translate(28 66) scale(.75)"/>
+    <path d="M5 12h14m-7-7 7 7-7 7" transform="translate(62 66) scale(.75)"/>
+    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8M21 3v5h-5" transform="translate(96 66) scale(.75)"/>
+  </g>
   <rect x="146" y="59" width="834" height="32" rx="16" fill="#111" stroke="#2e2e2e"/>
   <path d="M166 73v-3a4 4 0 0 1 8 0v3m-9 0h10v8h-10Z" fill="none" stroke="#888" stroke-width="1.3" stroke-linejoin="round"/>
   <text x="187" y="80" font-size="13" fill="#b9b9b9">playground.example</text>
