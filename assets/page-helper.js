@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 8) return;
+  if (globalThis.__browserBridge?.version === 9) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -12,7 +12,7 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 8,
+    version: 9,
     documentId,
     refs: new Map(),
     sequence: 0,
@@ -28,13 +28,38 @@
   // Fitts-style timing: long reaches take longer, short hops stay quick.
   const travelMs = (distance) =>
     Math.min(700, Math.max(400, 280 + 80 * Math.log2(1 + distance / 24)));
-  // A small figure eight that starts and ends at rest, so the drift never jumps.
-  const idleFrames = Array.from({ length: 25 }, (_, index) => {
-    const angle = (index / 24) * Math.PI * 2;
-    const x = 4 * Math.sin(angle);
-    const y = 2.5 * Math.sin(2 * angle);
-    return { transform: `translate(${x.toFixed(2)}px,${y.toFixed(2)}px)` };
-  });
+  const idleMs = 28000;
+  const idleRadius = 3.2;
+  // A slow, irregular wander: overlapping waves with random phases, softly held inside
+  // idleRadius. It eases out of and back to rest, so starting and looping never jump.
+  const wander = () => {
+    const waves = [
+      [2.4, 9, 'x'],
+      [1.6, 19, 'x'],
+      [2.4, 12, 'y'],
+      [1.6, 17, 'y'],
+    ].map(([amplitude, cycles, axis]) => ({
+      amplitude,
+      cycles,
+      axis,
+      phase: Math.random() * Math.PI * 2,
+    }));
+    return Array.from({ length: 281 }, (_, index) => {
+      const t = index / 280;
+      const edge = Math.min(1, (Math.min(t, 1 - t) * idleMs) / 1500);
+      const envelope = edge * edge * (3 - 2 * edge);
+      let x = 0;
+      let y = 0;
+      for (const wave of waves) {
+        const value = wave.amplitude * Math.sin(Math.PI * 2 * wave.cycles * t + wave.phase);
+        if (wave.axis === 'x') x += value;
+        else y += value;
+      }
+      const radius = Math.hypot(x, y);
+      const scale = radius ? (envelope * idleRadius * Math.tanh(radius / idleRadius)) / radius : 0;
+      return { transform: `translate(${(x * scale).toFixed(2)}px,${(y * scale).toFixed(2)}px)` };
+    });
+  };
   const originals = new Map();
   const pointerPathData =
     'M4.1 2.8 21 9.7Q22.4 10.3 20.9 10.9L14.1 13.6Q13.7 13.7 13.6 14.1L10.9 20.9Q10.3 22.4 9.7 21L2.8 4.1Q2 2 4.1 2.8Z';
@@ -178,10 +203,9 @@
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       if (!cursor || !state.owner || still() || travel?.playState === 'running') return;
-      idle = cursor.animate(idleFrames, {
-        duration: 3600,
+      idle = cursor.animate(wander(), {
+        duration: idleMs,
         iterations: Infinity,
-        easing: 'ease-in-out',
         composite: 'add',
       });
     }, 600);

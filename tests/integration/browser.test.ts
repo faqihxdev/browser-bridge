@@ -214,7 +214,7 @@ test(
             const animations = await page.context().newCDPSession(page);
             let drifts = 0;
             animations.on('Animation.animationStarted', ({ animation }) => {
-              if (animation.source?.duration === 3600) drifts++;
+              if (animation.source?.duration === 28000) drifts++;
             });
             await animations.send('Animation.enable');
             const started = (await page.evaluate('performance.now()')) as number;

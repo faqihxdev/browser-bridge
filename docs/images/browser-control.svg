@@ -10,7 +10,7 @@
       .muted { fill: #868686; }
       .ink { fill: #e9e9e9; }
       .pointer { animation: pointer 10s infinite; }
-      .drift { animation: drift 3.6s linear infinite; }
+      .drift { animation: drift 14s linear infinite; }
       .favicon { animation: favicon 10s infinite; }
       .ownership { animation: ownership 10s infinite; }
       .released { opacity: 0; animation: released 10s infinite; }
@@ -37,14 +37,63 @@
         88%, 100% { transform: translate(971px, 137px); opacity: 0; }
       }
       @keyframes drift {
-        0%, 100% { transform: translate(0, 0); }
-        12.5% { transform: translate(2.8px, 2.5px); }
-        25% { transform: translate(4px, 0); }
-        37.5% { transform: translate(2.8px, -2.5px); }
-        50% { transform: translate(0, 0); }
-        62.5% { transform: translate(-2.8px, 2.5px); }
-        75% { transform: translate(-4px, 0); }
-        87.5% { transform: translate(-2.8px, -2.5px); }
+        0% { transform: translate(0.00px, 0.00px); }
+        1.79% { transform: translate(0.08px, -0.08px); }
+        3.57% { transform: translate(0.18px, -0.40px); }
+        5.36% { transform: translate(0.49px, -0.71px); }
+        7.14% { transform: translate(1.00px, -0.28px); }
+        8.93% { transform: translate(0.63px, 1.25px); }
+        10.71% { transform: translate(-0.92px, 2.24px); }
+        12.5% { transform: translate(-2.08px, 1.88px); }
+        14.29% { transform: translate(-2.57px, 0.79px); }
+        16.07% { transform: translate(-1.73px, -1.27px); }
+        17.86% { transform: translate(0.52px, -2.55px); }
+        19.64% { transform: translate(1.79px, -2.25px); }
+        21.43% { transform: translate(2.30px, -1.20px); }
+        23.21% { transform: translate(1.61px, 1.12px); }
+        25% { transform: translate(0.21px, 2.55px); }
+        26.79% { transform: translate(-0.30px, 2.61px); }
+        28.57% { transform: translate(-0.24px, 1.67px); }
+        30.36% { transform: translate(-0.24px, -0.79px); }
+        32.14% { transform: translate(-0.86px, -2.16px); }
+        33.93% { transform: translate(-1.67px, -2.08px); }
+        35.71% { transform: translate(-2.15px, -1.25px); }
+        37.5% { transform: translate(-1.46px, 0.15px); }
+        39.29% { transform: translate(0.97px, 1.31px); }
+        41.07% { transform: translate(2.38px, 1.18px); }
+        42.86% { transform: translate(2.60px, 0.79px); }
+        44.64% { transform: translate(1.90px, 0.45px); }
+        46.43% { transform: translate(-0.25px, 0.15px); }
+        48.21% { transform: translate(-1.67px, -0.04px); }
+        50% { transform: translate(-1.72px, -0.38px); }
+        51.79% { transform: translate(-1.08px, -1.02px); }
+        53.57% { transform: translate(-0.68px, -1.54px); }
+        55.36% { transform: translate(-0.98px, -1.42px); }
+        57.14% { transform: translate(-1.35px, -0.38px); }
+        58.93% { transform: translate(-0.68px, 1.35px); }
+        60.71% { transform: translate(0.92px, 2.24px); }
+        62.5% { transform: translate(2.08px, 1.88px); }
+        64.29% { transform: translate(2.57px, 0.79px); }
+        66.07% { transform: translate(1.73px, -1.27px); }
+        67.86% { transform: translate(-0.52px, -2.55px); }
+        69.64% { transform: translate(-1.79px, -2.25px); }
+        71.43% { transform: translate(-2.30px, -1.20px); }
+        73.21% { transform: translate(-1.61px, 1.12px); }
+        75% { transform: translate(-0.21px, 2.55px); }
+        76.79% { transform: translate(0.30px, 2.61px); }
+        78.57% { transform: translate(0.24px, 1.67px); }
+        80.36% { transform: translate(0.24px, -0.79px); }
+        82.14% { transform: translate(0.86px, -2.16px); }
+        83.93% { transform: translate(1.67px, -2.08px); }
+        85.71% { transform: translate(2.15px, -1.25px); }
+        87.5% { transform: translate(1.46px, 0.15px); }
+        89.29% { transform: translate(-0.97px, 1.31px); }
+        91.07% { transform: translate(-2.20px, 1.09px); }
+        92.86% { transform: translate(-1.93px, 0.58px); }
+        94.64% { transform: translate(-0.95px, 0.22px); }
+        96.43% { transform: translate(0.06px, 0.04px); }
+        98.21% { transform: translate(0.12px, -0.00px); }
+        100% { transform: translate(0.00px, 0.00px); }
       }
       @keyframes favicon { 0%, 84% { opacity: .55; } 88%, 100% { opacity: 1; } }
       @keyframes ownership { 0%, 84% { opacity: 1; } 88%, 100% { opacity: 0; } }
