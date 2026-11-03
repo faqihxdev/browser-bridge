@@ -204,6 +204,8 @@ test(
               .contexts()[0]!
               .pages()
               .find((page) => page.url() === url + '/')!;
+            // Exercise animation timing independently of the runner's accessibility settings.
+            await page.emulateMedia({ reducedMotion: 'no-preference' });
             await page.evaluate('globalThis.__browserBridge.setAttention(true)');
             await page.evaluate(
               'document.querySelector("#save").onclick = () => globalThis.clickedAt = performance.now()',
