@@ -210,6 +210,13 @@ test(
             await page.evaluate(
               'document.querySelector("#save").onclick = () => globalThis.clickedAt = performance.now()',
             );
+            // The cursor lives in a closed shadow root, so observe its animations through CDP.
+            const animations = await page.context().newCDPSession(page);
+            let drifts = 0;
+            animations.on('Animation.animationStarted', ({ animation }) => {
+              if (animation.source?.duration === 3600) drifts++;
+            });
+            await animations.send('Animation.enable');
             const started = (await page.evaluate('performance.now()')) as number;
             await call('act', { action: 'click', selector: '#save' });
             const clickedAt = (await page.evaluate('globalThis.clickedAt')) as number;
@@ -218,6 +225,15 @@ test(
               ((await page.evaluate('performance.now()')) as number) - clickedAt >= 125,
               'A watched action includes a short result pause',
             );
+            await page.waitForTimeout(800);
+            assert.ok(drifts > 0, 'The cursor drifts at rest');
+            await page.emulateMedia({ reducedMotion: 'reduce' });
+            drifts = 0;
+            await call('act', { action: 'move', x: 120, y: 140 });
+            await page.waitForTimeout(800);
+            assert.equal(drifts, 0, 'Reduced motion disables idle drift');
+            await animations.detach();
+            await page.emulateMedia({ reducedMotion: 'no-preference' });
 
             const moving = call('act', { action: 'move', x: 130, y: 150 });
             await page.waitForFunction('globalThis.__browserBridge.position.x === 130');

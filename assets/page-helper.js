@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 7) return;
+  if (globalThis.__browserBridge?.version === 8) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -12,7 +12,7 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 7,
+    version: 8,
     documentId,
     refs: new Map(),
     sequence: 0,
@@ -22,9 +22,19 @@
   };
   const ids = new WeakMap();
   const waits = new Set();
-  const movementMs = 500;
   const actionPauseMs = 150;
-  let host, cursor, icon, observer;
+  let host, cursor, icon, observer, travel, idle, idleTimer;
+  const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Fitts-style timing: long reaches take longer, short hops stay quick.
+  const travelMs = (distance) =>
+    Math.min(700, Math.max(400, 280 + 80 * Math.log2(1 + distance / 24)));
+  // A small figure eight that starts and ends at rest, so the drift never jumps.
+  const idleFrames = Array.from({ length: 25 }, (_, index) => {
+    const angle = (index / 24) * Math.PI * 2;
+    const x = 4 * Math.sin(angle);
+    const y = 2.5 * Math.sin(2 * angle);
+    return { transform: `translate(${x.toFixed(2)}px,${y.toFixed(2)}px)` };
+  });
   const originals = new Map();
   const pointerPathData =
     'M4.1 2.8 21 9.7Q22.4 10.3 20.9 10.9L14.1 13.6Q13.7 13.7 13.6 14.1L10.9 20.9Q10.3 22.4 9.7 21L2.8 4.1Q2 2 4.1 2.8Z';
@@ -121,6 +131,7 @@
     if (position) state.position = position;
     visual();
     badge();
+    rest();
     return { documentId, faviconUrl: faviconUrl() };
   };
   state.setIcon = (data, key, expectedDocumentId, source) => {
@@ -144,7 +155,7 @@
   state.setAttention = (watched) => {
     state.watched = !!watched;
     if (!state.watched) {
-      if (cursor) cursor.style.transition = 'none';
+      travel?.cancel();
       for (const finish of [...waits]) finish();
     }
   };
@@ -161,21 +172,56 @@
     });
   };
   state.pause = () => wait(actionPauseMs);
+  // Idle drift shows that the tab is still owned and makes the cursor easier to spot.
+  function rest() {
+    if (idle && idle.effect?.target === cursor) return;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (!cursor || !state.owner || still() || travel?.playState === 'running') return;
+      idle = cursor.animate(idleFrames, {
+        duration: 3600,
+        iterations: Infinity,
+        easing: 'ease-in-out',
+        composite: 'add',
+      });
+    }, 600);
+  }
   state.move = async (x, y, click = false) => {
     if (!state.owner) return;
     const changed = state.position.x !== x || state.position.y !== y;
     state.position = { x, y };
     visual();
-    const animate = state.watched && !matchMedia('(prefers-reduced-motion: reduce)').matches;
-    cursor.style.transition = animate
-      ? `transform ${movementMs}ms cubic-bezier(.22,.61,.36,1)`
-      : 'none';
+    clearTimeout(idleTimer);
+    const computed = getComputedStyle(cursor).transform;
+    const from = new DOMMatrixReadOnly(computed === 'none' ? undefined : computed);
+    travel?.cancel();
+    idle?.cancel();
+    travel = idle = null;
     cursor.style.transform = `translate3d(${x}px,${y}px,0)`;
-    if (animate && changed) await wait(movementMs);
+    const dx = x - from.e;
+    const dy = y - from.f;
+    const distance = Math.hypot(dx, dy);
+    if (state.watched && !still() && distance >= 0.5) {
+      const duration = changed ? travelMs(distance) : 150;
+      // Hands reach along a slight arc with a minimum-jerk speed profile.
+      const bend = Math.min(distance * 0.1, 36) * (Math.random() < 0.5 ? -1 : 1);
+      const cx = from.e + dx / 2 - (dy / distance) * bend;
+      const cy = from.f + dy / 2 + (dx / distance) * bend;
+      const frames = Array.from({ length: 21 }, (_, index) => {
+        const t = index / 20;
+        const s = t * t * t * (10 - 15 * t + 6 * t * t);
+        const u = 1 - s;
+        const px = u * u * from.e + 2 * u * s * cx + s * s * x;
+        const py = u * u * from.f + 2 * u * s * cy + s * s * y;
+        return { transform: `translate3d(${px.toFixed(1)}px,${py.toFixed(1)}px,0)` };
+      });
+      travel = cursor.animate(frames, duration);
+      await wait(duration);
+    }
     if (click && cursor && state.owner && state.watched) {
       const pulse = cursor.querySelector('.pulse');
       pulse.getAnimations().forEach((animation) => animation.cancel());
-      if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
+      if (!still())
         pulse.animate(
           [
             { opacity: 0.8, transform: 'scale(.5)' },
@@ -184,6 +230,7 @@
           220,
         );
     }
+    if (state.owner) rest();
   };
   state.hide = (value) => {
     if (host) host.style.visibility = value ? 'hidden' : 'visible';
@@ -219,9 +266,11 @@
     originals.clear();
     iconHref = null;
     iconSource = null;
+    clearTimeout(idleTimer);
     host?.remove();
     host = null;
     cursor = null;
+    travel = idle = null;
   };
   state.resolve = (ref) => state.refs.get(ref)?.deref() ?? null;
   state.snapshot = (limit = 200, maxText = 12000) => {

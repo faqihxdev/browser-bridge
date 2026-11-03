@@ -6,7 +6,7 @@ Compared with the [ChatGPT extension](https://learn.chatgpt.com/docs/chrome-exte
 
 [Checks](https://github.com/faqihxdev/browser-bridge/actions/workflows/checks.yml)
 
-![Browser Bridge mockup: a visible cursor runs code in a browser, then releases the tab.](docs/images/browser-control.svg)
+![Browser Bridge mockup: a visible cursor types code, runs it, then releases the tab.](docs/images/browser-control.svg)
 
 ## Architecture
 
@@ -16,15 +16,15 @@ A shared Node.js 24 manager routes MCP agents to persistent Playwright/CDP contr
 
 ## Engineering highlights
 
-| Capability       | Implementation                                                                                                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser routing  | Local discovery, names and aliases, independent selection per agent and a persistent controller per browser. Browser-qualified tab IDs retain their original destination. |
-| Fast actions     | Ordered batches reduce agent round trips. Targeted snapshots and bounded request history keep responses small. Background actions have no intentional pacing delay.       |
-| Tab ownership    | One agent per tab. Release and disconnect restore indicators. Human stop invalidates queued work and active batches.                                                      |
-| Visible activity | Persistent cursor and favicon overlay. Watched tabs use 500 ms eased movement and 150 ms action pauses; switching away cancels pacing. Release restores indicators.       |
-| Broad access     | Page actions, JavaScript, raw page/browser CDP, cookies, network details, screenshots, PDFs, uploads and extension browser APIs.                                          |
-| Native Windows   | UI inspection, invocation, values, menus, keyboard/mouse input and window screenshots through a persistent helper.                                                        |
-| Verification     | Real-browser tests cover input, ownership, cancellation, navigation, favicon restoration, independent MCP clients and two simultaneous extension/native-host connections. |
+| Capability       | Implementation                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser routing  | Local discovery, names and aliases, independent selection per agent and a persistent controller per browser. Browser-qualified tab IDs retain their original destination.                                                                   |
+| Fast actions     | Ordered batches reduce agent round trips. Targeted snapshots and bounded request history keep responses small. Background actions have no intentional pacing delay.                                                                         |
+| Tab ownership    | One agent per tab. Release and disconnect restore indicators. Human stop invalidates queued work and active batches.                                                                                                                        |
+| Visible activity | Persistent cursor and favicon overlay. Watched tabs move it along a slight arc in 400 to 700 ms, scaled by distance, with 150 ms action pauses; switching away cancels pacing. At rest it drifts a few pixels. Release restores indicators. |
+| Broad access     | Page actions, JavaScript, raw page/browser CDP, cookies, network details, screenshots, PDFs, uploads and extension browser APIs.                                                                                                            |
+| Native Windows   | UI inspection, invocation, values, menus, keyboard/mouse input and window screenshots through a persistent helper.                                                                                                                          |
+| Verification     | Real-browser tests cover input, ownership, cancellation, navigation, favicon restoration, independent MCP clients and two simultaneous extension/native-host connections.                                                                   |
 
 ## Setup
 

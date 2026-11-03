@@ -14,3 +14,7 @@
 2026-10-29
 
 - Keep the rounded, stemless cursor visible throughout ownership, following agent actions only. Use a white fill and black outline. Overlay it at full opacity on the faded site favicon; release restores the site icon.
+
+2026-11-03
+
+- Watched cursor travel uses a slight arc with distance-scaled timing. At rest the cursor drifts a few pixels so users can spot it. Reduced motion disables both.

@@ -1,94 +1,140 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="560" viewBox="0 0 1080 560" role="img" aria-labelledby="demo-title demo-description">
   <title id="demo-title">Browser Bridge in action</title>
-  <desc id="demo-description">An illustrated browser runs a JavaScript loop. A white cursor moves from the editor to Run, the output shows one through five, and the cursor and favicon overlay disappear when control ends.</desc>
+  <desc id="demo-description">An illustrated browser runs a JavaScript loop. A white cursor arcs into the editor, types the code, moves to Run and clicks it. The output shows one through five while the cursor drifts slightly at rest. When control ends, the cursor and favicon overlay disappear.</desc>
   <defs>
     <path id="cursor" d="M4.1 2.8 21 9.7Q22.4 10.3 20.9 10.9L14.1 13.6Q13.7 13.7 13.6 14.1L10.9 20.9Q10.3 22.4 9.7 21L2.8 4.1Q2 2 4.1 2.8Z" fill="#fff" stroke="#000" stroke-width="1.6" stroke-linejoin="round"/>
+    <clipPath id="editor"><rect x="80" y="240" width="570" height="240"/></clipPath>
     <style>
       text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-      .mono text, text.mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace; }
+      .mono text, text.mono { font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace; }
       .muted { fill: #868686; }
       .ink { fill: #e9e9e9; }
-      .code { animation: code 9s infinite; }
-      .output { animation: output 9s infinite; }
-      .pointer { transform: translate(947px, 139px) scale(1.35); animation: pointer 9s infinite; }
-      .favicon { opacity: .55; animation: favicon 9s infinite; }
-      .ownership { animation: ownership 9s infinite; }
-      .released { opacity: 0; animation: released 9s infinite; }
-      .click { opacity: 0; transform-origin: 960px 150px; animation: click 9s infinite; }
-      @keyframes code { 0%, 19% { opacity: 0; } 20%, 100% { opacity: 1; } }
-      @keyframes output { 0%, 59% { opacity: 0; } 60%, 100% { opacity: 1; } }
+      .pointer { animation: pointer 10s infinite; }
+      .drift { animation: drift 3.6s linear infinite; }
+      .favicon { animation: favicon 10s infinite; }
+      .ownership { animation: ownership 10s infinite; }
+      .released { opacity: 0; animation: released 10s infinite; }
+      .click { opacity: 0; transform-box: fill-box; transform-origin: center; }
+      .click-editor { animation: click-editor 10s infinite; }
+      .click-run { animation: click-run 10s infinite; }
+      .press { transform-box: fill-box; transform-origin: center; animation: press 10s infinite; }
+      .type-1 { animation: type-1 10s infinite steps(30, end); }
+      .type-2 { animation: type-2 10s infinite steps(15, end); }
+      .type-3 { animation: type-3 10s infinite steps(1, end); }
+      .caret-1 { animation: caret-1 10s infinite; }
+      .caret-2 { animation: caret-2 10s infinite; }
+      .caret-3 { animation: caret-3 10s infinite; }
+      .output text { opacity: 0; animation: output 10s infinite; }
       @keyframes pointer {
-        0%, 9% { transform: translate(315px, 264px) scale(1.35); opacity: 1; }
-        20%, 38% { transform: translate(474px, 297px) scale(1.35); opacity: 1; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
-        47%, 83% { transform: translate(947px, 139px) scale(1.35); opacity: 1; }
-        88%, 100% { transform: translate(947px, 139px) scale(1.35); opacity: 0; }
+        0% { transform: translate(600px, 420px); opacity: 0; }
+        3%, 8% { transform: translate(600px, 420px); opacity: 1; animation-timing-function: cubic-bezier(.5, 0, 1, 1); }
+        10.7% { transform: translate(545px, 397px); }
+        13.3% { transform: translate(389px, 374px); animation-timing-function: cubic-bezier(0, 0, .5, 1); }
+        16%, 42% { transform: translate(330px, 380px); animation-timing-function: cubic-bezier(.5, 0, 1, 1); }
+        45.3% { transform: translate(456px, 307px); }
+        48.7% { transform: translate(828px, 166px); animation-timing-function: cubic-bezier(0, 0, .5, 1); }
+        52%, 84% { transform: translate(971px, 137px); opacity: 1; }
+        88%, 100% { transform: translate(971px, 137px); opacity: 0; }
       }
-      @keyframes favicon { 0%, 83% { opacity: .55; } 88%, 100% { opacity: 1; } }
-      @keyframes ownership { 0%, 83% { opacity: 1; } 88%, 100% { opacity: 0; } }
-      @keyframes released { 0%, 83% { opacity: 0; } 88%, 100% { opacity: 1; } }
-      @keyframes click { 0%, 49% { opacity: 0; transform: scale(.5); } 50% { opacity: .6; transform: scale(.5); } 58%, 100% { opacity: 0; transform: scale(1.7); } }
+      @keyframes drift {
+        0%, 100% { transform: translate(0, 0); }
+        12.5% { transform: translate(2.8px, 2.5px); }
+        25% { transform: translate(4px, 0); }
+        37.5% { transform: translate(2.8px, -2.5px); }
+        50% { transform: translate(0, 0); }
+        62.5% { transform: translate(-2.8px, 2.5px); }
+        75% { transform: translate(-4px, 0); }
+        87.5% { transform: translate(-2.8px, -2.5px); }
+      }
+      @keyframes favicon { 0%, 84% { opacity: .55; } 88%, 100% { opacity: 1; } }
+      @keyframes ownership { 0%, 84% { opacity: 1; } 88%, 100% { opacity: 0; } }
+      @keyframes released { 0%, 84% { opacity: 0; } 88%, 100% { opacity: 1; } }
+      @keyframes click-editor { 0%, 15.9% { opacity: 0; transform: scale(.5); } 16% { opacity: .7; transform: scale(.5); } 19%, 100% { opacity: 0; transform: scale(1.6); } }
+      @keyframes click-run { 0%, 51.9% { opacity: 0; transform: scale(.5); } 52% { opacity: .7; transform: scale(.5); } 55%, 100% { opacity: 0; transform: scale(1.6); } }
+      @keyframes press { 0%, 51.9%, 54%, 100% { transform: scale(1); } 52.5% { transform: scale(.96); } }
+      @keyframes type-1 { 0%, 18% { transform: translateX(0); } 30%, 100% { transform: translateX(330px); } }
+      @keyframes type-2 { 0%, 31% { transform: translateX(0); } 37%, 100% { transform: translateX(165px); } }
+      @keyframes type-3 { 0%, 38% { transform: translateX(0); } 39%, 100% { transform: translateX(11px); } }
+      @keyframes caret-1 { 0%, 17.9% { opacity: 0; } 18%, 30.9% { opacity: 1; } 31%, 100% { opacity: 0; } }
+      @keyframes caret-2 { 0%, 30.9% { opacity: 0; } 31%, 37.9% { opacity: 1; } 38%, 100% { opacity: 0; } }
+      @keyframes caret-3 { 0%, 37.9% { opacity: 0; } 38%, 52% { opacity: 1; } 52.1%, 100% { opacity: 0; } }
+      @keyframes output { 0%, 54% { opacity: 0; } 55%, 94% { opacity: 1; } 95%, 100% { opacity: 0; } }
       @media (prefers-reduced-motion: reduce) {
-        .code, .output, .pointer, .favicon, .ownership, .released, .click { animation: none; }
+        .pointer, .drift, .favicon, .ownership, .released, .click-editor, .click-run, .press, .type-1, .type-2, .type-3, .caret-1, .caret-2, .caret-3, .output text { animation: none; }
+        .pointer { transform: translate(971px, 137px); }
+        .type-1, .type-2, .type-3, .caret-1, .caret-2, .caret-3 { opacity: 0; }
+        .output text { opacity: 1; }
       }
     </style>
   </defs>
-  <rect x=".5" y=".5" width="1079" height="559" rx="18" fill="#111" stroke="#363636"/>
-  <path d="M18 1H1062Q1079 1 1079 18V100H1V18Q1 1 18 1Z" fill="#191919"/>
-  <path d="M16 48V21Q16 11 26 11H262Q272 11 272 21V48" fill="#292929"/>
+
+  <rect x=".5" y=".5" width="1079" height="519" rx="18" fill="#141414" stroke="#363636"/>
+  <path d="M18 1H1062Q1079 1 1079 18V50H1V18Q1 1 18 1Z" fill="#0e0e0e"/>
+  <path d="M1 100V50H6Q16 50 16 40V21Q16 11 26 11H262Q272 11 272 21V40Q272 50 282 50H1079V100Z" fill="#1c1c1c"/>
   <g class="favicon" stroke="#d9d9d9" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round">
     <path d="m39 24-5 5 5 5m10-10 5 5-5 5m-5-13-3 17"/>
   </g>
-  <use href="#cursor" x="43" y="26" width="16" height="16" transform="translate(14 9) scale(.7)" class="ownership"/>
+  <use href="#cursor" transform="translate(44 28) scale(.6)" class="ownership"/>
   <text x="67" y="34" font-size="14" class="ink">JavaScript playground</text>
   <path d="m247 25 7 7m0-7-7 7" stroke="#929292" stroke-width="1.3" stroke-linecap="round"/>
   <g class="muted" font-size="14">
-    <text x="308" y="33">Documentation</text>
-    <text x="469" y="33" font-size="20">+</text>
+    <text x="300" y="34">Documentation</text>
+    <path d="M472 29h12m-6-6v12" stroke="#868686" stroke-width="1.5" stroke-linecap="round"/>
   </g>
-  <path d="M32 73H47m-15 0 6-6m-6 6 6 6m33-6H86m0 0-6-6m6 6-6 6M113 69a7 7 0 1 0 1 9m-1-9v6h-6" fill="none" stroke="#929292" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="146" y="57" width="834" height="32" rx="8" fill="#101010" stroke="#323232"/>
-  <path d="M164 71v-3a4 4 0 0 1 8 0v3m-9 0h10v8h-10Z" fill="none" stroke="#888" stroke-width="1.3" stroke-linejoin="round"/>
-  <text x="187" y="78" font-size="13" fill="#b9b9b9">playground.example</text>
-  <use href="#cursor" transform="translate(1001 62)"/>
-  <circle cx="1048" cy="73" r="2" fill="#aaa"/>
-  <circle cx="1048" cy="66" r="2" fill="#aaa"/>
-  <circle cx="1048" cy="80" r="2" fill="#aaa"/>
-  <path d="M1 100H1079" stroke="#333"/>
+  <path d="M32 75H47m-15 0 6-6m-6 6 6 6m33-6H86m0 0-6-6m6 6-6 6M113 71a7 7 0 1 0 1 9m-1-9v6h-6" fill="none" stroke="#929292" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="146" y="59" width="834" height="32" rx="16" fill="#111" stroke="#2e2e2e"/>
+  <path d="M166 73v-3a4 4 0 0 1 8 0v3m-9 0h10v8h-10Z" fill="none" stroke="#888" stroke-width="1.3" stroke-linejoin="round"/>
+  <text x="187" y="80" font-size="13" fill="#b9b9b9">playground.example</text>
+  <rect x="996" y="61" width="28" height="28" rx="8" fill="#2a2a2a"/>
+  <use href="#cursor" transform="translate(1003 68) scale(.6)"/>
+  <circle cx="1048" cy="68" r="1.8" fill="#aaa"/>
+  <circle cx="1048" cy="75" r="1.8" fill="#aaa"/>
+  <circle cx="1048" cy="82" r="1.8" fill="#aaa"/>
+  <path d="M1 100.5H1079" stroke="#2c2c2c"/>
+
   <text x="32" y="151" class="ink" font-size="22" font-weight="600">JavaScript</text>
-  <rect x="903" y="120" width="145" height="42" rx="8" fill="#e8e8e8"/>
-  <path d="m928 133 12 8-12 8Z" fill="#111"/>
-  <text x="952" y="147" font-size="15" font-weight="600" fill="#111">Run</text>
-  <rect x="32" y="186" width="630" height="305" rx="10" fill="#161616" stroke="#343434"/>
-  <rect x="684" y="186" width="364" height="305" rx="10" fill="#0d0d0d" stroke="#343434"/>
-  <path d="M32 231H662m22 0h364" stroke="#303030"/>
+  <g class="press">
+    <rect x="903" y="120" width="145" height="42" rx="8" fill="#e8e8e8"/>
+    <path d="m928 133 12 8-12 8Z" fill="#141414"/>
+    <text x="952" y="147" font-size="15" font-weight="600" fill="#141414">Run</text>
+  </g>
+  <rect x="32" y="186" width="630" height="305" rx="10" fill="#191919" stroke="#323232"/>
+  <rect x="684" y="186" width="364" height="305" rx="10" fill="#0f0f0f" stroke="#323232"/>
+  <path d="M33 231H661m24 0h362" stroke="#2c2c2c"/>
   <text x="53" y="214" font-size="13" fill="#b7b7b7" class="mono">main.js</text>
-  <text x="705" y="214" font-size="13" fill="#b7b7b7">Output</text>
+  <text x="705" y="214" font-size="13" fill="#b7b7b7">Console</text>
   <g class="mono" font-size="18" fill="#575757" text-anchor="end">
     <text x="66" y="275">1</text>
     <text x="66" y="309">2</text>
     <text x="66" y="343">3</text>
   </g>
-  <g class="mono code" font-size="19">
-    <text x="88" y="275" fill="#c7c7c7"><tspan fill="#fff">for</tspan> (let i = 1; i &lt;= 5; i++) {</text>
-    <text x="110" y="309" fill="#c7c7c7">console.log(i);</text>
-    <text x="88" y="343" fill="#c7c7c7">}</text>
+  <g clip-path="url(#editor)">
+    <g class="mono" font-size="19">
+      <text x="88" y="275" fill="#c7c7c7" textLength="330" lengthAdjust="spacing"><tspan fill="#fff">for</tspan> (let i = 1; i &lt;= 5; i++) {</text>
+      <text x="110" y="309" fill="#c7c7c7" textLength="165" lengthAdjust="spacing">console.log(i);</text>
+      <text x="88" y="343" fill="#c7c7c7">}</text>
+    </g>
+    <g class="type-1"><rect x="87" y="252" width="560" height="32" fill="#191919"/><rect x="87" y="257" width="2" height="23" fill="#e9e9e9" class="caret-1"/></g>
+    <g class="type-2"><rect x="109" y="286" width="540" height="32" fill="#191919"/><rect x="109" y="291" width="2" height="23" fill="#e9e9e9" class="caret-2"/></g>
+    <g class="type-3"><rect x="87" y="320" width="560" height="32" fill="#191919"/><rect x="87" y="325" width="2" height="23" fill="#e9e9e9" class="caret-3"/></g>
   </g>
   <g class="output mono ink" font-size="19">
     <text x="708" y="275">1</text>
-    <text x="708" y="309">2</text>
-    <text x="708" y="343">3</text>
-    <text x="708" y="377">4</text>
-    <text x="708" y="411">5</text>
+    <text x="708" y="309" style="animation-delay: .12s">2</text>
+    <text x="708" y="343" style="animation-delay: .24s">3</text>
+    <text x="708" y="377" style="animation-delay: .36s">4</text>
+    <text x="708" y="411" style="animation-delay: .48s">5</text>
   </g>
-  <g font-size="13" class="muted">
-    <text x="32" y="530">Browser Bridge</text>
+
+  <circle cx="334" cy="384" r="16" fill="none" stroke="#fff" stroke-width="1.3" class="click click-editor"/>
+  <circle cx="975" cy="141" r="18" fill="none" stroke="#fff" stroke-width="1.3" class="click click-run"/>
+  <g class="pointer"><g class="drift"><use href="#cursor" transform="scale(1.35)"/></g></g>
+
+  <g font-size="14" class="muted">
     <g class="ownership">
-      <circle cx="168" cy="526" r="3" fill="#ddd"/>
-      <text x="181" y="530">Controlling this tab</text>
+      <use href="#cursor" transform="translate(16 535) scale(.6)"/>
+      <text x="36" y="549">Browser Bridge is controlling this tab</text>
     </g>
-    <text x="163" y="530" class="released">Tab released</text>
-    <text x="1048" y="530" text-anchor="end" fill="#666">Interaction mockup</text>
+    <text x="16" y="549" class="released">Tab released</text>
   </g>
-  <circle cx="960" cy="150" r="18" fill="none" stroke="#fff" stroke-width="1.3" class="click"/>
-  <use href="#cursor" class="pointer"/>
 </svg>
