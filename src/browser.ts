@@ -444,11 +444,16 @@ export class BrowserController {
             await new Promise((resolve) => setTimeout(resolve, 25));
           }
           if (!tab) throw new Error('New tab did not appear.');
-          await this.claim(session, tab);
-          this.expire(tab);
-          if (args.url)
-            await tab.page.goto(text(args.url, 'url'), { waitUntil: 'domcontentloaded' });
-          if (args.focus === true) await tab.page.bringToFront();
+          tab.busy++;
+          try {
+            await this.claim(session, tab);
+            if (args.url)
+              await tab.page.goto(text(args.url, 'url'), { waitUntil: 'domcontentloaded' });
+            if (args.focus === true) await tab.page.bringToFront();
+          } finally {
+            tab.busy--;
+            this.expire(tab);
+          }
           return { tabId: tab.id, url: tab.page.url() };
         } finally {
           await root.detach();
