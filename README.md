@@ -20,7 +20,7 @@ A shared Node.js 24 manager routes MCP agents to persistent Playwright/CDP contr
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Browser routing  | Local discovery, names and aliases, independent selection per agent and a persistent controller per browser. Browser-qualified tab IDs retain their original destination.                                                                   |
 | Fast actions     | Ordered batches reduce agent round trips. Targeted snapshots and bounded request history keep responses small. Background actions have no intentional pacing delay.                                                                         |
-| Tab ownership    | One agent per tab. Release and disconnect restore indicators. Human stop invalidates queued work and active batches.                                                                                                                        |
+| Tab ownership    | One agent per tab. Tabs left idle for 5 minutes release automatically; the next action reclaims them. Release and disconnect restore indicators. Human stop invalidates queued work and active batches.                                     |
 | Visible activity | Persistent cursor and favicon overlay. Watched tabs move it along a slight arc in 400 to 700 ms, scaled by distance, with 150 ms action pauses; switching away cancels pacing. At rest it drifts a few pixels. Release restores indicators. |
 | Broad access     | Page actions, JavaScript, raw page/browser CDP, cookies, network details, screenshots, PDFs, uploads and extension browser APIs.                                                                                                            |
 | Native Windows   | UI inspection, invocation, values, menus, keyboard/mouse input and window screenshots through a persistent helper.                                                                                                                          |
@@ -58,7 +58,7 @@ Choose a connection:
 
 Ask your agent to "control Brave" or "control Edge". Each agent keeps its own selection; existing tab IDs retain their browser. Duplicate names require the browser ID from discovery. Foreground focus is preserved unless requested.
 
-The manager starts with the first agent or extension connection and exits ten minutes after the last disconnects. `pnpm browsers` lists discovered browsers. `pnpm doctor --browser Brave` checks attachment; `pnpm status` reports active control; `pnpm stop` disconnects and restores indicators.
+The manager starts with the first agent or extension connection and exits ten minutes after the last disconnects. A claimed tab with no agent activity releases after `releaseIdleMs` in `config.json`, 300000 by default; `0` keeps claims until release. `pnpm browsers` lists discovered browsers. `pnpm doctor --browser Brave` checks attachment; `pnpm status` reports active control; `pnpm stop` disconnects and restores indicators.
 
 Discovery covers Edge, Chrome, Brave, Vivaldi, Opera/GX and Chromium, including Scoop installs. Custom `browsers` entries accept `name`, `aliases` and `userDataDir`. Settings and credentials stay in `%LOCALAPPDATA%\BrowserBridge`; `BROWSER_BRIDGE_HOME` selects a separate runtime directory.
 

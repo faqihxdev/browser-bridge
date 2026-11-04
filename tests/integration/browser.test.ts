@@ -553,6 +553,35 @@ test(
           await cdp.detach();
         }
       });
+      await t.test('idle tabs release on their own but never during work', async () => {
+        let released = () => {};
+        const idle = new BrowserController(
+          { ...defaults, browser: `http://127.0.0.1:${cdpPort}`, releaseIdleMs: 300 },
+          async () => undefined,
+          () => released(),
+        );
+        const next = () => new Promise<void>((resolve) => (released = resolve));
+        const claims = () => (idle.status().claims as unknown[]).length;
+        try {
+          let expired = next();
+          const started = Date.now();
+          const { tabId } = (await idle.execute(first, 'open', { url })) as { tabId: string };
+          assert.equal(claims(), 1);
+          await expired;
+          assert.ok(Date.now() - started >= 300);
+          assert.equal(claims(), 0, 'An unused tab releases after releaseIdleMs');
+          expired = next();
+          const waiting = idle.execute(first, 'wait', { tabId, selector: '#never', timeout: 700 });
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          assert.equal(claims(), 1, 'Work in flight keeps the claim');
+          await assert.rejects(waiting);
+          await expired;
+          assert.equal(claims(), 0);
+          await idle.execute(first, 'close', { tabId });
+        } finally {
+          await idle.dispose();
+        }
+      });
       await t.test('disconnect restores indicators without closing browser tabs', async () => {
         await controller.releaseSession(first.id);
         assert.equal((controller.status().claims as unknown[]).length, 0);

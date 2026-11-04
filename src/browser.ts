@@ -35,6 +35,8 @@ interface Tab {
   requestSequence: number;
   dialog?: import('playwright-core').Dialog;
   pointer?: { x: number; y: number };
+  busy: number;
+  expiry?: NodeJS.Timeout;
 }
 const helper = readFile(new URL('../assets/page-helper.js', import.meta.url), 'utf8');
 const text = (value: unknown, name: string): string => {
@@ -57,6 +59,7 @@ export class BrowserController {
   constructor(
     private config: Config,
     private extension: (args: Data) => Promise<unknown>,
+    private released: () => void = () => undefined,
   ) {}
   status(): Data {
     return {
@@ -132,6 +135,7 @@ export class BrowserController {
         console: [],
         network: [],
         requestSequence: 0,
+        busy: 0,
       };
       this.tabs.set(tab.id, tab);
       page.on('close', () => this.tabs.delete(tab.id));
@@ -296,7 +300,20 @@ export class BrowserController {
       [...this.tabs.values()].filter((tab) => tab.owner?.id === id).map((tab) => this.release(tab)),
     );
   }
+  // Release tabs an agent has stopped using. Its next operation claims the tab again.
+  private expire(tab: Tab): void {
+    clearTimeout(tab.expiry);
+    const ms = this.config.releaseIdleMs;
+    if (!ms || !tab.owner || tab.busy) return;
+    const { generation } = tab;
+    tab.expiry = setTimeout(() => {
+      if (!tab.owner || tab.busy || tab.generation !== generation || tab.page.isClosed()) return;
+      void this.release(tab).then(this.released, () => undefined);
+    }, ms);
+    tab.expiry.unref();
+  }
   private async release(tab: Tab): Promise<void> {
+    clearTimeout(tab.expiry);
     const owner = tab.owner;
     tab.owner = undefined;
     tab.generation++;
@@ -428,6 +445,7 @@ export class BrowserController {
           }
           if (!tab) throw new Error('New tab did not appear.');
           await this.claim(session, tab);
+          this.expire(tab);
           if (args.url)
             await tab.page.goto(text(args.url, 'url'), { waitUntil: 'domcontentloaded' });
           if (args.focus === true) await tab.page.bringToFront();
@@ -458,6 +476,17 @@ export class BrowserController {
       await this.release(tab);
       return { released: tab.id };
     }
+    // Count work in flight so idle release never interrupts an operation.
+    tab.busy++;
+    clearTimeout(tab.expiry);
+    try {
+      return await this.operate(session, tab, op, args);
+    } finally {
+      tab.busy--;
+      this.expire(tab);
+    }
+  }
+  private async operate(session: Session, tab: Tab, op: string, args: Data): Promise<unknown> {
     if (op === 'dialog') {
       await this.claim(session, tab);
       this.ensure(session, tab);

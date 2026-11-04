@@ -17,6 +17,8 @@ interface Instance {
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class BrowserManager {
+  // Called after a controller releases an idle tab on its own, so status listeners can refresh.
+  onRelease: () => void = () => undefined;
   private instances = new Map<string, Instance>();
   private selected = new Map<string, string>();
   private extensions = new Map<string, ExtensionIdentity>();
@@ -56,8 +58,10 @@ export class BrowserManager {
     if (!instance) {
       instance = {
         target,
-        controller: new BrowserController({ ...this.config, browser: target.endpoint! }, (args) =>
-          this.browserApi(target.id, args),
+        controller: new BrowserController(
+          { ...this.config, browser: target.endpoint! },
+          (args) => this.browserApi(target.id, args),
+          () => this.onRelease(),
         ),
       };
       this.instances.set(target.id, instance);
@@ -66,8 +70,10 @@ export class BrowserManager {
       const previous = instance.controller;
       instance = {
         target,
-        controller: new BrowserController({ ...this.config, browser: target.endpoint! }, (args) =>
-          this.browserApi(target.id, args),
+        controller: new BrowserController(
+          { ...this.config, browser: target.endpoint! },
+          (args) => this.browserApi(target.id, args),
+          () => this.onRelease(),
         ),
       };
       this.instances.set(target.id, instance);

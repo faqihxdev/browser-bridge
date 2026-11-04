@@ -8,6 +8,7 @@ export interface Config {
   browsers?: BrowserDefinition[];
   connectTimeoutMs?: number;
   idleMs: number;
+  releaseIdleMs: number;
   actionTimeoutMs: number;
   navigationTimeoutMs: number;
 }
@@ -38,6 +39,7 @@ export const defaults: Config = {
   browsers: [],
   connectTimeoutMs: 60_000,
   idleMs: 600_000,
+  releaseIdleMs: 300_000,
   actionTimeoutMs: 5_000,
   navigationTimeoutMs: 30_000,
 };
@@ -93,6 +95,13 @@ export async function loadConfig(): Promise<Config> {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 1)
       throw new Error('Timeouts must be positive numbers.');
   }
+  if (
+    typeof config.releaseIdleMs !== 'number' ||
+    !Number.isFinite(config.releaseIdleMs) ||
+    config.releaseIdleMs < 0 ||
+    config.releaseIdleMs > 2_147_483_647
+  )
+    throw new Error('releaseIdleMs must be 0 to disable, or a timeout up to 2147483647 ms.');
   return config;
 }
 export async function credential(): Promise<string> {

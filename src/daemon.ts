@@ -83,6 +83,7 @@ export async function runDaemon(): Promise<void> {
       extension.send({ event: 'state', args: state });
     }
   };
+  controller.onRelease = () => void broadcast().catch((error) => console.error(message(error)));
   const server = createServer((socket) => {
     const wire = new Wire(socket);
     const session = { id: randomUUID(), label: 'Agent', role: 'agent', active: true };
