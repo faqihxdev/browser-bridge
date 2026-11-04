@@ -71,6 +71,15 @@ test(
           assert.ok(nameRef);
           assert.ok(elements.some((element) => element.name === 'Frame button'));
           assert.equal(JSON.stringify(snapshot).includes('private-value'), false);
+          const count = snapshot.frames[0]!.elements.length;
+          const exact = (await call('snapshot', { limit: count })) as {
+            frames: { truncated: boolean }[];
+          };
+          assert.equal(exact.frames[0]!.truncated, false, 'An exact limit is not truncation');
+          const short = (await call('snapshot', { limit: count - 1 })) as {
+            frames: { truncated: boolean }[];
+          };
+          assert.equal(short.frames[0]!.truncated, true);
         },
       );
       await t.test('claim shows the cursor before any pointer action', async () => {
@@ -95,6 +104,39 @@ test(
           params: { nodeId },
         })) as { model: { width: number; height: number } };
         assert.ok(model.width > 0 && model.height > 0, 'The cursor has a visible layout box');
+      });
+      await t.test('the cursor stays above modal dialogs', async () => {
+        await call('act', { action: 'move', x: 200, y: 200 });
+        await call('evaluate', {
+          expression: `(() => {
+            const dialog = document.createElement('dialog');
+            dialog.id = 'modal';
+            dialog.style.cssText = 'width:100vw;height:100vh;max-width:none;max-height:none;margin:0;padding:0;border:0';
+            document.body.append(dialog);
+            dialog.showModal();
+          })()`,
+        });
+        try {
+          const { backendNodeId } = (await call('cdp', {
+            method: 'DOM.getNodeForLocation',
+            params: {
+              x: 206,
+              y: 206,
+              includeUserAgentShadowDOM: true,
+              ignorePointerEventsNone: true,
+            },
+          })) as { backendNodeId: number };
+          const { node } = (await call('cdp', {
+            method: 'DOM.describeNode',
+            params: { backendNodeId },
+          })) as { node: { localName: string } };
+          assert.ok(
+            ['svg', 'path'].includes(node.localName),
+            'The cursor arrow is the topmost node',
+          );
+        } finally {
+          await call('evaluate', { expression: 'document.querySelector("#modal").remove()' });
+        }
       });
       await t.test('real input and batches change application state', async () => {
         const results = (await call('batch', {

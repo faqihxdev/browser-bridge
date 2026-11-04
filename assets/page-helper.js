@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 9) return;
+  if (globalThis.__browserBridge?.version === 11) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -12,7 +12,7 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 9,
+    version: 11,
     documentId,
     refs: new Map(),
     sequence: 0,
@@ -23,8 +23,12 @@
   const ids = new WeakMap();
   const waits = new Set();
   const actionPauseMs = 150;
-  let host, cursor, icon, observer, travel, idle, idleTimer;
+  let host, cursor, arrow, icon, observer, layers, travel, idle, idleTimer;
   const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const matrix = (element) => {
+    const value = getComputedStyle(element).transform;
+    return new DOMMatrixReadOnly(value === 'none' ? undefined : value);
+  };
   // Fitts-style timing: long reaches take longer, short hops stay quick.
   const travelMs = (distance) =>
     Math.min(700, Math.max(400, 280 + 80 * Math.log2(1 + distance / 24)));
@@ -90,9 +94,9 @@
     cursor.style.cssText =
       'position:absolute;left:0;top:0;width:22px;height:22px;will-change:transform;';
     cursor.style.transform = `translate3d(${state.position.x}px,${state.position.y}px,0)`;
-    const arrow = document.createElement('div');
+    arrow = document.createElement('div');
     arrow.className = 'pointer';
-    arrow.style.cssText = 'display:block;width:100%;height:100%;';
+    arrow.style.cssText = 'display:block;width:100%;height:100%;will-change:transform;';
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('width', '22');
@@ -108,7 +112,32 @@
       'position:absolute;inset:-8px;border:1px solid #aaa;border-radius:50%;opacity:0;';
     cursor.append(pulse, arrow);
     root.append(cursor);
+    host.popover = 'manual';
     document.documentElement.append(host);
+    layers?.disconnect();
+    layers = new MutationObserver(raise);
+    layers.observe(document.documentElement, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['open'],
+    });
+    addEventListener('toggle', lift, true);
+    addEventListener('fullscreenchange', raise, true);
+    raise();
+  }
+  // Modal dialogs, popovers and fullscreen elements render in the top layer above any z-index.
+  // The cursor is a manual popover, and reopening it puts it above newer top-layer elements.
+  function raise() {
+    if (!host?.isConnected || !host.showPopover) return;
+    try {
+      if (host.matches(':popover-open')) host.hidePopover();
+      host.showPopover();
+    } catch {
+      // Without the top layer, the cursor still sits above ordinary page content.
+    }
+  }
+  function lift(event) {
+    if (event.target !== host) raise();
   }
   function faviconUrl() {
     const href = [...originals.values()].findLast((original) => original.href)?.href;
@@ -198,16 +227,13 @@
   };
   state.pause = () => wait(actionPauseMs);
   // Idle drift shows that the tab is still owned and makes the cursor easier to spot.
+  // It moves the arrow inside the cursor with replace compositing so it runs off the main thread.
   function rest() {
-    if (idle && idle.effect?.target === cursor) return;
+    if (idle && idle.effect?.target === arrow) return;
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      if (!cursor || !state.owner || still() || travel?.playState === 'running') return;
-      idle = cursor.animate(wander(), {
-        duration: idleMs,
-        iterations: Infinity,
-        composite: 'add',
-      });
+      if (!arrow || !state.owner || still() || travel?.playState === 'running') return;
+      idle = arrow.animate(wander(), { duration: idleMs, iterations: Infinity });
     }, 600);
   }
   state.move = async (x, y, click = false) => {
@@ -215,9 +241,11 @@
     const changed = state.position.x !== x || state.position.y !== y;
     state.position = { x, y };
     visual();
+    raise();
     clearTimeout(idleTimer);
-    const computed = getComputedStyle(cursor).transform;
-    const from = new DOMMatrixReadOnly(computed === 'none' ? undefined : computed);
+    // Start from the visible point, including any idle offset, so travel never jumps.
+    const offset = matrix(arrow);
+    const from = matrix(cursor).translate(offset.e, offset.f);
     travel?.cancel();
     idle?.cancel();
     travel = idle = null;
@@ -291,23 +319,31 @@
     iconHref = null;
     iconSource = null;
     clearTimeout(idleTimer);
+    layers?.disconnect();
+    layers = null;
+    removeEventListener('toggle', lift, true);
+    removeEventListener('fullscreenchange', raise, true);
     host?.remove();
     host = null;
-    cursor = null;
+    cursor = arrow = null;
     travel = idle = null;
   };
   state.resolve = (ref) => state.refs.get(ref)?.deref() ?? null;
   state.snapshot = (limit = 200, maxText = 12000) => {
     const items = [];
+    let truncated = false;
     const visit = (root) => {
       for (const element of root.querySelectorAll(
         'a[href],button,input,textarea,select,[role],[contenteditable="true"],[tabindex]',
       )) {
-        if (items.length >= limit) break;
         if (element === host || element.closest('[aria-hidden="true"],[inert]')) continue;
         const rect = element.getBoundingClientRect();
         if (!rect.width || !rect.height || getComputedStyle(element).visibility === 'hidden')
           continue;
+        if (items.length >= limit) {
+          truncated = true;
+          break;
+        }
         let ref = ids.get(element);
         if (!ref) {
           ref = `${state.documentId}:${++state.sequence}`;
@@ -344,7 +380,7 @@
         });
       }
       for (const element of root.querySelectorAll('*'))
-        if (element.shadowRoot && items.length < limit) visit(element.shadowRoot);
+        if (element.shadowRoot && !truncated) visit(element.shadowRoot);
     };
     visit(document);
     for (const [ref, value] of state.refs) if (!value.deref()?.isConnected) state.refs.delete(ref);
@@ -354,7 +390,7 @@
       url: location.href,
       text: (document.body?.innerText || '').slice(0, maxText),
       elements: items,
-      truncated: items.length >= limit,
+      truncated,
     };
   };
   globalThis.__browserBridge = state;

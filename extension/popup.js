@@ -3,17 +3,22 @@ const errorBox = document.querySelector('#error');
 chrome.runtime.onMessage.addListener((message) => {
   if (message.event === 'state') void refresh();
 });
+let latest = 0;
 async function refresh() {
-  errorBox.hidden = true;
+  // State events can overlap. Render only the newest response.
+  const request = ++latest;
   document.querySelector('#refresh').disabled = true;
   try {
     const response = await chrome.runtime.sendMessage({ op: 'status' });
+    if (request !== latest) return;
+    errorBox.hidden = true;
     if (!response) throw new Error('The extension worker did not respond.');
     if (response.error) throw new Error(response.error);
     document.querySelector('#connection').textContent = response.result.connected
       ? 'Connected'
       : 'Ready';
     document.querySelector('#lamp').className = 'ready';
+    const focused = document.activeElement?.dataset.tabId;
     tabs.replaceChildren();
     for (const claim of response.result.claims) {
       const row = document.createElement('div');
@@ -36,6 +41,7 @@ async function refresh() {
       info.append(name, url);
       const stop = document.createElement('button');
       stop.textContent = 'Stop';
+      stop.dataset.tabId = claim.tabId;
       stop.setAttribute('aria-label', `Stop ${claim.agent} on ${address}`);
       stop.onclick = async () => {
         stop.disabled = true;
@@ -54,6 +60,7 @@ async function refresh() {
       };
       row.append(info, stop);
       tabs.append(row);
+      if (claim.tabId === focused) stop.focus();
     }
     if (!response.result.claims.length) {
       const empty = document.createElement('p');
@@ -62,12 +69,13 @@ async function refresh() {
       tabs.append(empty);
     }
   } catch (error) {
+    if (request !== latest) return;
     document.querySelector('#connection').textContent = 'Unavailable';
     document.querySelector('#lamp').className = '';
     errorBox.textContent = `${error.message} Run setup, then reload this extension.`;
     errorBox.hidden = false;
   } finally {
-    document.querySelector('#refresh').disabled = false;
+    if (request === latest) document.querySelector('#refresh').disabled = false;
   }
 }
 document.querySelector('#refresh').onclick = refresh;

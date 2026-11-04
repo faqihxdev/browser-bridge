@@ -172,6 +172,8 @@ export class BrowserController {
   }
   private async tab(id: unknown): Promise<Tab> {
     text(id, 'tabId');
+    const known = this.tabs.get(id as string);
+    if (known && !known.page.isClosed() && this.browser?.isConnected()) return known;
     await this.allTabs();
     const tab = this.tabs.get(id as string);
     if (!tab || tab.page.isClosed()) throw new Error('Tab no longer exists. List tabs again.');
@@ -507,32 +509,27 @@ export class BrowserController {
         return { focused: tab.id };
       }
       if (op === 'snapshot') {
-        const frames: unknown[] = [];
         tab.refs.clear();
-        for (const frame of page.frames()) {
-          try {
-            await frame.evaluate(await helper);
-            const snapshot = await frame.evaluate(
-              ({ limit, maxText }) =>
-                (
-                  globalThis as unknown as {
-                    __browserBridge: {
-                      snapshot(limit: number, maxText: number): { elements: { ref: string }[] };
-                    };
-                  }
-                ).__browserBridge.snapshot(limit, maxText),
-              {
-                limit: Math.min(1000, Math.max(1, number(args.limit, 200))),
-                maxText: Math.min(100000, Math.max(0, number(args.maxText, 12000))),
-              },
-            );
-            for (const element of snapshot.elements) tab.refs.set(element.ref, frame);
-            frames.push({ frameUrl: frame.url(), ...snapshot });
-          } catch (error) {
-            frames.push({ frameUrl: frame.url(), error: message(error) });
-          }
-        }
-        if (frames.length && frames.every((frame) => 'error' in (frame as Data)))
+        const limit = Math.min(1000, Math.max(1, number(args.limit, 200)));
+        const maxText = Math.min(100000, Math.max(0, number(args.maxText, 12000)));
+        // Install the helper and read in one round trip per frame, with frames read concurrently.
+        const source = `${await helper}\n;globalThis.__browserBridge.snapshot(${limit}, ${maxText})`;
+        const frames = await Promise.all(
+          page.frames().map(async (frame) => {
+            try {
+              const snapshot = (await deadline(
+                frame.evaluate(source),
+                this.config.navigationTimeoutMs,
+                'Frame snapshot',
+              )) as { elements: { ref: string }[] };
+              for (const element of snapshot.elements) tab.refs.set(element.ref, frame);
+              return { frameUrl: frame.url(), ...snapshot };
+            } catch (error) {
+              return { frameUrl: frame.url(), error: message(error) };
+            }
+          }),
+        );
+        if (frames.length && frames.every((frame) => 'error' in frame))
           throw new Error(`Cannot snapshot this page: ${(frames[0] as Data).error}`);
         return { tabId: tab.id, frames };
       }

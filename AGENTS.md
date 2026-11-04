@@ -18,3 +18,7 @@
 2026-11-03
 
 - Watched cursor travel uses a slight arc with distance-scaled timing. At rest the cursor drifts a few pixels so users can spot it. Reduced motion disables both.
+
+2026-11-04
+
+- Keep the cursor in the top layer above modal dialogs, popovers and fullscreen content. Keep cursor animations compositor-friendly, with replace compositing on transforms.
