@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 15) return;
+  if (globalThis.__browserBridge?.version === 18) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -12,7 +12,7 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 15,
+    version: 18,
     documentId,
     refs: new Map(),
     sequence: 0,
@@ -290,14 +290,17 @@
       attributeFilter: ['href', 'rel'],
     });
   }
+  // A repeat claim by the same owner keeps the cursor in place and reports that the document
+  // needs no new icon or attention sync.
   state.claim = (owner, key, position) => {
+    const fresh = state.ownerKey !== key || !host?.isConnected || !iconHref;
     state.owner = owner;
     state.ownerKey = key;
-    if (position) state.position = position;
+    if (position && fresh) state.position = position;
     visual();
     badge();
     rest();
-    return { documentId, faviconUrl: faviconUrl() };
+    return { documentId, faviconUrl: faviconUrl(), fresh };
   };
   state.setIcon = (data, key, expectedDocumentId, source) => {
     if (!state.owner || state.ownerKey !== key || documentId !== expectedDocumentId) return false;
@@ -385,6 +388,7 @@
         );
     }
     if (state.owner) rest();
+    return state.watched;
   };
   state.hide = (value) => {
     if (host) host.style.visibility = value ? 'hidden' : 'visible';
@@ -431,6 +435,61 @@
     travel = idle = null;
   };
   state.resolve = (ref) => state.refs.get(ref)?.deref() ?? null;
+  const typeable = new Set(['text', 'search', 'email', 'url', 'tel', 'password']);
+  // One round trip for a top-document action: find the target, check that it takes input at
+  // its center, move the cursor there and focus text fields. Anything else returns null, and
+  // the controller falls back to Playwright's checks.
+  state.target = async (selector, ref, action) => {
+    if (window !== window.top) return null;
+    let element;
+    if (ref) {
+      element = state.resolve(ref);
+      if (!element?.isConnected) return { stale: true };
+    } else {
+      let found;
+      try {
+        found = document.querySelectorAll(selector);
+      } catch {
+        return null;
+      }
+      if (found.length !== 1) return null;
+      element = found[0];
+    }
+    const disabled = element.matches(':disabled,[aria-disabled="true"]');
+    if (disabled && action !== 'hover') return { disabled: true };
+    if (
+      action === 'fill' &&
+      !(
+        (element instanceof HTMLInputElement && typeable.has(element.type)) ||
+        element instanceof HTMLTextAreaElement
+      )
+    )
+      return null;
+    if (action === 'fill' && element.readOnly) return null;
+    let rect = element.getBoundingClientRect();
+    if (rect.top < 0 || rect.left < 0 || rect.bottom > innerHeight || rect.right > innerWidth) {
+      element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+      rect = element.getBoundingClientRect();
+    }
+    if (!rect.width || !rect.height) return null;
+    const x = rect.x + rect.width / 2;
+    const y = rect.y + rect.height / 2;
+    // Hit-test inside the element's own shadow root, then its outermost host in the document.
+    const inside = (target, hit) => !!hit && (hit === target || target.contains(hit));
+    let outer = element;
+    while (outer.getRootNode() instanceof ShadowRoot) outer = outer.getRootNode().host;
+    if (
+      !inside(element, element.getRootNode().elementFromPoint(x, y)) ||
+      !inside(outer, document.elementFromPoint(x, y))
+    )
+      return null;
+    const watched = await state.move(x, y, action === 'click');
+    if (action === 'fill') {
+      element.focus();
+      element.select();
+    }
+    return { x, y, watched };
+  };
   state.snapshot = (limit = 200, maxText = 12000) => {
     const items = [];
     let truncated = false;
@@ -481,8 +540,9 @@
           ...(element.disabled ? { disabled: true } : {}),
         });
       }
-      for (const element of root.querySelectorAll('*'))
-        if (element.shadowRoot && !truncated) visit(element.shadowRoot);
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+      while (!truncated && walker.nextNode())
+        if (walker.currentNode.shadowRoot) visit(walker.currentNode.shadowRoot);
     };
     visit(document);
     for (const [ref, value] of state.refs) if (!value.deref()?.isConnected) state.refs.delete(ref);

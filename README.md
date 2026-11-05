@@ -26,6 +26,26 @@ A shared Node.js 24 manager routes MCP agents to persistent Playwright/CDP contr
 | Native Windows   | UI inspection, invocation, values, menus, keyboard/mouse input and window screenshots through a persistent helper.                                                                                                                                                                                    |
 | Verification     | Real-browser tests cover input, ownership, cancellation, navigation, favicon restoration, independent MCP clients and two simultaneous extension/native-host connections.                                                                                                                             |
 
+## Performance
+
+Median controller latency in milliseconds from `pnpm benchmark:latency`, against headless Chromium on Windows 11. Tabs are unwatched, so the numbers exclude cursor pacing. `6a66edd` is the commit before the latency work.
+
+| Operation                          | `6a66edd` |  Now |
+| ---------------------------------- | --------: | ---: |
+| Click by selector                  |      10.3 |  1.4 |
+| Click by snapshot ref              |       7.6 |  1.3 |
+| Fill a text field                  |       9.3 |  1.2 |
+| Fill, click and read in one batch  |      21.3 |  3.6 |
+| Click deep in a 6,000-element page |      25.8 |  2.2 |
+| Snapshot, 200 of 6,000 elements    |      13.1 |  3.2 |
+| Snapshot, 1,000 of 6,000 elements  |      43.3 |  8.5 |
+| Snapshot across 9 frames           |       7.1 |  3.1 |
+| Open a tab and load a page         |      77.1 | 57.6 |
+
+Clicks, hovers and text fills on an unobstructed target in the top document take one helper call plus the input events. Other targets go through Playwright's actionability checks. Snapshots come back as JSON strings, which cross the protocol several times faster than serialized objects, and the helper source goes only to frames that lack it.
+
+The browser sets the remaining costs. A pointer move waits for the next frame, about 17 ms, a screenshot for one or two frames, and a new tab for its renderer process. Against Edge with 14 open tabs, the first call after the controller starts takes about 1 s, mostly while Playwright attaches to the existing tabs.
+
 ## Setup
 
 Use Node.js 24 and pnpm 11.1.1.
@@ -73,7 +93,7 @@ pnpm test:integration
 pnpm test:extension
 ```
 
-Browser tests use isolated Playwright Chromium, installed with `pnpm exec playwright-core install chromium`. Extension tests also need setup registration. CI runs types, build and browser tests on Windows and Linux.
+Browser tests use isolated Playwright Chromium, installed with `pnpm exec playwright-core install chromium`. `pnpm benchmark:latency` measures controller latency with the same browser. Extension tests also need setup registration. CI runs types, build and browser tests on Windows and Linux.
 
 Use Conventional Commits and `<name>/<type>-<description>` branches. Keep credentials, screenshots and browser content out of Git.
 

@@ -82,6 +82,41 @@ test(
           assert.equal(short.frames[0]!.truncated, true);
         },
       );
+      await t.test('tabs report page titles and leave untitled pages blank', async () => {
+        const blank = (await controller.execute(first, 'open', {})) as { tabId: string };
+        try {
+          const tabs = (await controller.execute(first, 'tabs', {})) as {
+            tabId: string;
+            title: string;
+          }[];
+          assert.equal(tabs.find((tab) => tab.tabId === tabId)?.title, 'Bridge fixture');
+          assert.equal(tabs.find((tab) => tab.tabId === blank.tabId)?.title, '');
+        } finally {
+          await controller.execute(first, 'close', { tabId: blank.tabId });
+        }
+      });
+      await t.test(
+        'fill replaces text fields directly and other inputs through Playwright',
+        async () => {
+          await call('evaluate', {
+            expression:
+              'document.body.insertAdjacentHTML("beforeend", \'<div id="fills"><textarea id="area">old</textarea><input id="count" type="number" value="1"></div>\')',
+          });
+          try {
+            await call('act', { action: 'fill', selector: '#area', text: 'new text' });
+            await call('act', { action: 'fill', selector: '#count', text: '42' });
+            assert.deepEqual(
+              await call('evaluate', {
+                expression:
+                  '[document.querySelector("#area").value, document.querySelector("#count").value]',
+              }),
+              ['new text', '42'],
+            );
+          } finally {
+            await call('evaluate', { expression: 'document.querySelector("#fills").remove()' });
+          }
+        },
+      );
       await t.test('claim shows the cursor before any pointer action', async () => {
         const { root } = (await call('cdp', {
           method: 'DOM.getDocument',

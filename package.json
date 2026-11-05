@@ -27,7 +27,8 @@
     "mcp": "node dist/cli.js mcp",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "benchmark": "node scripts/benchmark.mjs"
+    "benchmark": "node scripts/benchmark.mjs",
+    "benchmark:latency": "node --import tsx scripts/latency.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

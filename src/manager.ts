@@ -125,9 +125,12 @@ export class BrowserManager {
     const selector = args.browser;
     if (selector !== undefined && (typeof selector !== 'string' || !selector.trim()))
       throw new Error('browser must be a browser name or ID from browser_list.');
-    const target = await this.registry.resolve(
-      tab?.browserId ?? selector ?? this.selected.get(session.id) ?? this.config.browser,
-    );
+    const name = tab?.browserId ?? selector ?? this.selected.get(session.id) ?? this.config.browser;
+    // A cached browser list is enough while its controller is connected. Otherwise look again,
+    // because a restarted browser listens on a new debugging port.
+    let target = await this.registry.resolve(name).catch(() => undefined);
+    if (!target || !this.instances.get(target.id)?.controller.status().connected)
+      target = await this.registry.resolve(name, 500);
     if (tab && selector !== undefined && (await this.registry.resolve(selector)).id !== target.id)
       throw new Error('The browser selector does not match this tabId.');
     const normalized = { ...args };
@@ -244,7 +247,7 @@ export class BrowserManager {
     if (op === 'select') {
       if (typeof args.browser !== 'string' || !args.browser.trim())
         throw new Error('browser is required.');
-      const target = await this.registry.resolve(args.browser);
+      const target = await this.registry.resolve(args.browser, 500);
       this.selected.set(session.id, target.id);
       return { selectedBrowserId: target.id, name: target.name };
     }

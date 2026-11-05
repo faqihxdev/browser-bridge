@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
+import { enableCompileCache } from 'node:module';
 import { connectController } from './client.js';
 import { message } from './config.js';
 
 async function main(): Promise<void> {
   const [command = 'help', ...args] = process.argv.slice(2);
+  // Cached bytecode starts the controller and adapter faster after their first run.
+  if (command === 'daemon' || command === 'mcp') enableCompileCache();
   if (command === 'daemon') {
     await (await import('./daemon.js')).runDaemon();
     return;

@@ -37,8 +37,11 @@ interface Tab {
   pointer?: { x: number; y: number };
   busy: number;
   expiry?: NodeJS.Timeout;
+  decorating?: Promise<void>;
+  redecorate?: boolean;
 }
 const helper = readFile(new URL('../assets/page-helper.js', import.meta.url), 'utf8');
+const helperVersion = helper.then((source) => Number(/\bversion: (\d+),/.exec(source)![1]));
 const text = (value: unknown, name: string): string => {
   if (typeof value !== 'string' || !value) throw new Error(`${name} must be a nonempty string.`);
   return value;
@@ -55,6 +58,7 @@ export class BrowserController {
   private attaching = new Map<Page, Promise<Tab>>();
   private global = new Queue();
   private favicons = new Map<string, Promise<string | undefined>>();
+  private rootSession?: Promise<CDPSession>;
   private desktop = new Desktop();
   constructor(
     private config: Config,
@@ -86,6 +90,7 @@ export class BrowserController {
       this.context.setDefaultNavigationTimeout(this.config.navigationTimeoutMs);
       await this.context.addInitScript({ content: await helper });
       browser.on('disconnected', () => {
+        this.rootSession = undefined;
         this.tabs.clear();
         this.attaching.clear();
         this.browser = undefined;
@@ -98,6 +103,15 @@ export class BrowserController {
     } finally {
       this.connecting = undefined;
     }
+  }
+  // One browser-level session serves tab listing and creation for the whole connection.
+  private async root(): Promise<CDPSession> {
+    await this.connect();
+    this.rootSession ??= this.browser!.newBrowserCDPSession();
+    return this.rootSession.catch((error) => {
+      this.rootSession = undefined;
+      throw error;
+    });
   }
   async extensionConnections(): Promise<string[]> {
     await this.connect();
@@ -191,29 +205,33 @@ export class BrowserController {
     )
       throw new Error('Tab ownership was released or transferred.');
   }
-  private async decorate(tab: Tab): Promise<void> {
+  // Navigation events and operations can ask for indicators at once. Run one decoration at a
+  // time, and once more afterwards if another request arrived meanwhile.
+  private decorate(tab: Tab): Promise<void> {
+    if (tab.decorating) {
+      tab.redecorate = true;
+      return tab.decorating;
+    }
+    tab.decorating = (async () => {
+      try {
+        do {
+          tab.redecorate = false;
+          await this.paint(tab);
+        } while (tab.redecorate);
+      } finally {
+        tab.decorating = undefined;
+      }
+    })();
+    return tab.decorating;
+  }
+  private async paint(tab: Tab): Promise<void> {
     const owner = tab.owner;
     if (!owner) return;
-    await tab.page.evaluate(await helper);
-    if (tab.owner?.id !== owner.id) return;
-    const metadata = await tab.page.evaluate(
-      ({ label, key, position }) =>
-        (
-          globalThis as unknown as {
-            __browserBridge: {
-              claim(
-                label: string,
-                key: string,
-                position?: { x: number; y: number },
-              ): {
-                documentId: string;
-                faviconUrl: string | null;
-              };
-            };
-          }
-        ).__browserBridge.claim(label, key, position),
-      { label: owner.label, key: owner.id, position: tab.pointer },
-    );
+    // Install the helper if needed and claim the document in one round trip.
+    const metadata = (await tab.page.evaluate(
+      `${await helper}\n;globalThis.__browserBridge.claim(${JSON.stringify(owner.label)}, ${JSON.stringify(owner.id)}, ${JSON.stringify(tab.pointer ?? null)})`,
+    )) as { documentId: string; faviconUrl: string | null; fresh: boolean };
+    if (!metadata.fresh) return;
     // Page focus is emulated for background input; ask the verified extension for real focus.
     await this.extension({ namespace: 'browserBridge', method: 'syncAttention' }).catch(
       () => undefined,
@@ -287,11 +305,13 @@ export class BrowserController {
     if (!tab.owner) {
       tab.owner = session;
       tab.generation++;
-      await tab.cdp
-        .send('Emulation.setFocusEmulationEnabled', { enabled: true })
-        .catch(() => undefined);
+      await Promise.all([
+        tab.cdp
+          .send('Emulation.setFocusEmulationEnabled', { enabled: true })
+          .catch(() => undefined),
+        this.decorate(tab).catch(() => undefined),
+      ]);
       this.ensure(session, tab);
-      await this.decorate(tab).catch(() => undefined);
     }
     return tab.generation;
   }
@@ -336,35 +356,39 @@ export class BrowserController {
         .send('Emulation.setFocusEmulationEnabled', { enabled: false })
         .catch(() => undefined);
   }
-  private async move(tab: Tab, x: number, y: number, click = false): Promise<void> {
+  // Resolves after any visible travel, with whether a person is watching the tab.
+  private async move(tab: Tab, x: number, y: number, click = false): Promise<boolean> {
     tab.pointer = { x, y };
-    await tab.page
+    return tab.page
       .evaluate(
         ({ x, y, click }) =>
           (
             globalThis as unknown as {
-              __browserBridge?: { move(x: number, y: number, click: boolean): Promise<void> };
+              __browserBridge?: { move(x: number, y: number, click: boolean): Promise<boolean> };
             }
           ).__browserBridge?.move(x, y, click),
         { x, y, click },
       )
-      .catch(() => undefined);
+      .then(Boolean, () => false);
+  }
+  // A short pause after input lets a watching person see each result.
+  private async pause(page: Page): Promise<void> {
+    await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
   }
   private async element(tab: Tab, args: Data): Promise<ElementHandle<HTMLElement | SVGElement>> {
     if (args.ref) {
       const ref = text(args.ref, 'ref');
       const frame = tab.refs.get(ref);
       if (!frame || frame.isDetached()) throw new Error('Stale reference. Take a new snapshot.');
-      const handle = await frame.evaluateHandle(
-        (ref) =>
-          (
-            globalThis as unknown as { __browserBridge?: { resolve(ref: string): Element | null } }
-          ).__browserBridge?.resolve(ref),
-        ref,
-      );
+      const handle = await frame.evaluateHandle((ref) => {
+        const element = (
+          globalThis as unknown as { __browserBridge?: { resolve(ref: string): Element | null } }
+        ).__browserBridge?.resolve(ref);
+        return element?.isConnected ? element : null;
+      }, ref);
       const element = handle.asElement();
-      if (!element || !(await element.evaluate((element) => element.isConnected))) {
-        await handle.dispose();
+      if (!element) {
+        void handle.dispose().catch(() => undefined);
         throw new Error('Stale reference. Take a new snapshot.');
       }
       return element as ElementHandle<HTMLElement | SVGElement>;
@@ -373,7 +397,23 @@ export class BrowserController {
       ? tab.page.frames().find((frame) => frame.url() === args.frameUrl)
       : tab.page.mainFrame();
     if (!frame) throw new Error('Frame not found.');
-    const locator = frame.locator(text(args.selector, 'selector'));
+    const selector = text(args.selector, 'selector');
+    // Plain CSS with exactly one match skips Playwright's slower selector engine. Its syntax,
+    // shadow DOM piercing, waiting and strictness errors still apply to everything else.
+    const quick = await frame
+      .evaluateHandle((selector) => {
+        try {
+          const found = document.querySelectorAll(selector);
+          return found.length === 1 ? found[0]! : null;
+        } catch {
+          return null;
+        }
+      }, selector)
+      .catch(() => undefined);
+    const found = quick?.asElement();
+    if (found) return found as ElementHandle<HTMLElement | SVGElement>;
+    void quick?.dispose().catch(() => undefined);
+    const locator = frame.locator(selector);
     const handle = await locator.elementHandle({ timeout: this.config.actionTimeoutMs });
     if (!handle) throw new Error('Element not found.');
     return handle;
@@ -418,46 +458,70 @@ export class BrowserController {
         this.ensure(session);
         return this.desktop.call(args);
       });
-    if (op === 'tabs')
+    if (op === 'tabs') {
+      const tabs = await this.allTabs();
+      // The browser knows every title, including frozen tabs that would stall a page query.
+      // It shows the URL when a page has no title.
+      const targets = await (
+        await this.root()
+      )
+        .send('Target.getTargets')
+        .then(({ targetInfos }) => new Map(targetInfos.map((info) => [info.targetId, info])))
+        .catch(() => new Map<string, { title: string; url: string }>());
       return Promise.all(
-        (await this.allTabs()).map(async (tab) => ({
-          tabId: tab.id,
-          url: tab.page.url(),
-          title: await deadline(tab.page.title(), 2000, 'Title').catch(() => ''),
-          agent: tab.owner?.label ?? null,
-        })),
+        tabs.map(async (tab) => {
+          const target = targets.get(tab.id);
+          return {
+            tabId: tab.id,
+            url: tab.page.url(),
+            title: target
+              ? target.title === target.url
+                ? ''
+                : target.title
+              : await deadline(tab.page.title(), 2000, 'Title').catch(() => ''),
+            agent: tab.owner?.label ?? null,
+          };
+        }),
       );
+    }
     if (op === 'open')
       return this.global.run(async () => {
         await this.connect();
         this.ensure(session);
-        const root = await this.browser!.newBrowserCDPSession();
+        const root = await this.root();
+        const { targetId } = await root.send('Target.createTarget', {
+          url: 'about:blank',
+          background: args.focus !== true,
+        });
+        // Playwright announces the page once it can drive it; waiting for that beats polling.
+        const context = this.context!;
+        const tab = await new Promise<Tab>((resolve, reject) => {
+          const check = (page: Page) =>
+            void this.attach(page).then(
+              (tab) => tab.id === targetId && finish(tab),
+              () => undefined,
+            );
+          const finish = (tab?: Tab) => {
+            clearTimeout(timer);
+            context.off('page', check);
+            if (tab) resolve(tab);
+            else reject(new Error('New tab did not appear.'));
+          };
+          const timer = setTimeout(finish, this.config.navigationTimeoutMs);
+          context.on('page', check);
+          for (const page of context.pages()) check(page);
+        });
+        tab.busy++;
         try {
-          const { targetId } = await root.send('Target.createTarget', {
-            url: 'about:blank',
-            background: args.focus !== true,
-          });
-          let tab: Tab | undefined;
-          for (let attempt = 0; attempt < 60; attempt++) {
-            tab = (await this.allTabs()).find((tab) => tab.id === targetId);
-            if (tab) break;
-            await new Promise((resolve) => setTimeout(resolve, 25));
-          }
-          if (!tab) throw new Error('New tab did not appear.');
-          tab.busy++;
-          try {
-            await this.claim(session, tab);
-            if (args.url)
-              await tab.page.goto(text(args.url, 'url'), { waitUntil: 'domcontentloaded' });
-            if (args.focus === true) await tab.page.bringToFront();
-          } finally {
-            tab.busy--;
-            this.expire(tab);
-          }
-          return { tabId: tab.id, url: tab.page.url() };
+          await this.claim(session, tab);
+          if (args.url)
+            await tab.page.goto(text(args.url, 'url'), { waitUntil: 'domcontentloaded' });
+          if (args.focus === true) await tab.page.bringToFront();
         } finally {
-          await root.detach();
+          tab.busy--;
+          this.expire(tab);
         }
+        return { tabId: tab.id, url: tab.page.url() };
       });
     if (op === 'cdp' && !args.tabId)
       return this.global.run(async () => {
@@ -546,16 +610,19 @@ export class BrowserController {
         tab.refs.clear();
         const limit = Math.min(1000, Math.max(1, number(args.limit, 200)));
         const maxText = Math.min(100000, Math.max(0, number(args.maxText, 12000)));
-        // Install the helper and read in one round trip per frame, with frames read concurrently.
-        const source = `${await helper}\n;globalThis.__browserBridge.snapshot(${limit}, ${maxText})`;
+        // Read frames concurrently. The init script has usually installed the current helper, so the
+        // full source goes only to frames without it. A JSON string crosses the protocol several
+        // times faster than a serialized object.
+        const read = `JSON.stringify(globalThis.__browserBridge.snapshot(${limit}, ${maxText}))`;
+        const quick = `globalThis.__browserBridge?.version === ${await helperVersion} ? ${read} : null`;
+        const full = `${await helper}\n;${read}`;
         const frames = await Promise.all(
           page.frames().map(async (frame) => {
             try {
-              const snapshot = (await deadline(
-                frame.evaluate(source),
-                this.config.navigationTimeoutMs,
-                'Frame snapshot',
-              )) as { elements: { ref: string }[] };
+              const evaluate = (source: string) =>
+                deadline(frame.evaluate(source), this.config.navigationTimeoutMs, 'Frame snapshot');
+              const json = ((await evaluate(quick)) ?? (await evaluate(full))) as string;
+              const snapshot = JSON.parse(json) as { elements: { ref: string }[] };
               for (const element of snapshot.elements) tab.refs.set(element.ref, frame);
               return { frameUrl: frame.url(), ...snapshot };
             } catch (error) {
@@ -580,7 +647,7 @@ export class BrowserController {
           'CDP command',
         );
         if (args.method === 'Input.insertText' || args.method === 'Input.dispatchKeyEvent')
-          await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
+          await this.pause(page);
         return result;
       }
       if (op === 'console') return tab.console;
@@ -651,12 +718,12 @@ export class BrowserController {
       }
       if (op === 'key') {
         await page.keyboard.press(text(args.key, 'key'));
-        await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
+        await this.pause(page);
         return true;
       }
       if (op === 'scroll') {
         await page.mouse.wheel(number(args.deltaX, 0), number(args.deltaY, 600));
-        await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
+        await this.pause(page);
         return true;
       }
       if (op === 'wait') {
@@ -679,7 +746,7 @@ export class BrowserController {
           y = Number(args.y);
         if (!Number.isFinite(x) || !Number.isFinite(y))
           throw new Error('x and y must be finite coordinates.');
-        await this.move(tab, x, y, action === 'click');
+        const watched = await this.move(tab, x, y, action === 'click');
         this.ensure(session, tab, generation);
         if (action === 'click')
           await page.mouse.click(x, y, {
@@ -694,12 +761,62 @@ export class BrowserController {
           await page.mouse.move(x, y);
           await page.mouse.up();
         } else throw new Error('Coordinate actions: click, move, down, up.');
-        await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
+        if (watched) await this.pause(page);
         return true;
+      }
+      // Top-document clicks, hovers and text fills on an unobstructed target finish in two round
+      // trips. Everything else takes the Playwright path below.
+      const fill = action === 'fill' ? String(args.text ?? '') : undefined;
+      const ref = typeof args.ref === 'string' ? args.ref : undefined;
+      if (
+        ['click', 'hover', 'fill'].includes(action) &&
+        fill !== '' &&
+        !args.frameUrl &&
+        args.stable !== true &&
+        (ref ? tab.refs.get(ref) === page.mainFrame() : typeof args.selector === 'string')
+      ) {
+        const target = await page
+          .evaluate(
+            ({ selector, ref, action }) =>
+              (
+                globalThis as unknown as {
+                  __browserBridge?: {
+                    target?(
+                      selector: string | undefined,
+                      ref: string | undefined,
+                      action: string,
+                    ): Promise<
+                      | { x: number; y: number; watched: boolean; stale?: never; disabled?: never }
+                      | { stale?: boolean; disabled?: boolean; x?: never }
+                      | null
+                    >;
+                  };
+                }
+              ).__browserBridge?.target?.(selector, ref, action) ?? null,
+            { selector: ref ? undefined : (args.selector as string), ref, action },
+          )
+          .catch(() => null);
+        if (target?.stale) throw new Error('Stale reference. Take a new snapshot.');
+        if (target?.disabled) throw new Error('Target element is disabled.');
+        if (target?.x !== undefined) {
+          tab.pointer = { x: target.x, y: target.y };
+          this.ensure(session, tab, generation);
+          if (action === 'click')
+            await page.mouse.click(target.x, target.y, {
+              button: args.button as 'left' | 'right' | 'middle' | undefined,
+              clickCount: number(args.clickCount, 1),
+            });
+          else if (action === 'hover') await page.mouse.move(target.x, target.y);
+          else await tab.cdp.send('Input.insertText', { text: fill! });
+          if (target.watched) await this.pause(page);
+          return { action, url: page.url() };
+        }
       }
       const element = await this.element(tab, args);
       try {
-        let immediate = false;
+        // Unobstructed main-frame targets take direct pointer input at the hit-tested point.
+        let immediate: { x: number; y: number } | undefined;
+        let watched = true;
         if (['click', 'hover', 'fill', 'type', 'check', 'select'].includes(action)) {
           const target = await element.evaluate((element) => {
             let rect = element.getBoundingClientRect();
@@ -725,26 +842,37 @@ export class BrowserController {
                 (hit === element || (!!hit && element.contains(hit))) &&
                 (documentHit === outer || (!!documentHit && outer.contains(documentHit))),
               disabled: element.matches(':disabled,[aria-disabled="true"]'),
+              top: window === window.top,
+              x,
+              y,
             };
           });
           if (target.disabled && action !== 'hover') throw new Error('Target element is disabled.');
-          immediate =
-            target.hit && args.stable !== true && (await element.ownerFrame()) === page.mainFrame();
-          const box = await element.boundingBox();
-          if (box)
-            await this.move(tab, box.x + box.width / 2, box.y + box.height / 2, action === 'click');
+          if (target.hit && target.top && args.stable !== true) immediate = target;
+          // Frame content needs page coordinates for the cursor.
+          const box = target.top ? undefined : await element.boundingBox();
+          const point = target.top
+            ? target
+            : box && { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+          if (point) watched = await this.move(tab, point.x, point.y, action === 'click');
         }
         this.ensure(session, tab, generation);
         switch (action) {
           case 'click':
-            await element.click({
-              force: immediate,
-              button: args.button as 'left' | 'right' | 'middle' | undefined,
-              clickCount: number(args.clickCount, 1),
-            });
+            if (immediate)
+              await page.mouse.click(immediate.x, immediate.y, {
+                button: args.button as 'left' | 'right' | 'middle' | undefined,
+                clickCount: number(args.clickCount, 1),
+              });
+            else
+              await element.click({
+                button: args.button as 'left' | 'right' | 'middle' | undefined,
+                clickCount: number(args.clickCount, 1),
+              });
             break;
           case 'hover':
-            await element.hover({ force: immediate });
+            if (immediate) await page.mouse.move(immediate.x, immediate.y);
+            else await element.hover();
             break;
           case 'fill':
             await element.fill(String(args.text ?? ''));
@@ -756,7 +884,7 @@ export class BrowserController {
             await element.press(text(args.key, 'key'));
             break;
           case 'check':
-            await element.setChecked(args.checked !== false, { force: immediate });
+            await element.setChecked(args.checked !== false, { force: !!immediate });
             break;
           case 'select':
             await element.selectOption(args.values as string | string[]);
@@ -768,10 +896,10 @@ export class BrowserController {
           default:
             throw new Error(`Unknown action: ${action}`);
         }
-        await page.evaluate('globalThis.__browserBridge?.pause()').catch(() => undefined);
+        if (watched) await this.pause(page);
         return { action, url: page.url() };
       } finally {
-        await element.dispose();
+        void element.dispose().catch(() => undefined);
       }
     });
   }

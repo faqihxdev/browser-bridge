@@ -147,8 +147,16 @@ export class BrowserRegistry {
     private config: Config,
     private env = environment(),
   ) {}
-  async list(refresh = false): Promise<BrowserTarget[]> {
-    if (!refresh && Date.now() - this.updated < 2000) return this.targets;
+  // Agents usually pause longer than the cache lifetime between calls. Serve the last list at
+  // once and refresh it in the background. refresh forces a new list, or one newer than the
+  // given age in milliseconds.
+  async list(refresh: boolean | number = false): Promise<BrowserTarget[]> {
+    const age = Date.now() - this.updated;
+    const limit = refresh === true ? 0 : refresh === false ? Infinity : refresh;
+    if (this.updated && age < limit) {
+      if (age >= 2000 && !this.discovering) void this.list(true).catch(() => undefined);
+      return this.targets;
+    }
     if (this.discovering) return this.discovering;
     this.discovering = this.discover();
     try {
@@ -271,8 +279,11 @@ export class BrowserRegistry {
     }
     return targets;
   }
-  async resolve(selector = this.config.browser): Promise<BrowserTarget> {
-    const targets = await this.list();
+  async resolve(
+    selector = this.config.browser,
+    refresh: boolean | number = false,
+  ): Promise<BrowserTarget> {
+    const targets = await this.list(refresh);
     const key = normalize(selector);
     const endpointTarget = isEndpoint(selector)
       ? targets.find((target) => target.endpoint === selector)

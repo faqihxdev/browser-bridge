@@ -44,6 +44,10 @@ export async function runMcp(): Promise<void> {
         const image = result as { mimeType: string; data: string };
         return { content: [{ type: 'image' as const, ...image }] };
       }
+      // Most results carry no images, so skip the walk unless the text could contain one.
+      const plain = JSON.stringify(result ?? null);
+      if (!plain.includes('"mimeType"'))
+        return { content: [{ type: 'text' as const, text: plain }] };
       const images: { type: 'image'; mimeType: string; data: string }[] = [];
       const extract = (value: unknown): unknown => {
         if (Array.isArray(value)) return value.map(extract);
