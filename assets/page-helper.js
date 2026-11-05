@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 11) return;
+  if (globalThis.__browserBridge?.version === 12) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -12,7 +12,7 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 11,
+    version: 12,
     documentId,
     refs: new Map(),
     sequence: 0,
@@ -66,7 +66,7 @@
   };
   const originals = new Map();
   const pointerPathData =
-    'M4.1 2.8 21 9.7Q22.4 10.3 20.9 10.9L14.1 13.6Q13.7 13.7 13.6 14.1L10.9 20.9Q10.3 22.4 9.7 21L2.8 4.1Q2 2 4.1 2.8Z';
+    'M.92 3.82A2.29 2.29 0 0 1 3.82.92L21.57 6.93A2.4 2.4 0 0 1 21.75 11.4L15.49 14.08A2.68 2.68 0 0 0 14.08 15.49L11.4 21.75A2.4 2.4 0 0 1 6.93 21.57Z';
   const pointerAttributes = {
     d: pointerPathData,
     fill: '#fff',
@@ -92,7 +92,7 @@
     cursor.className = 'cursor';
     // CSSOM styles work on nonce-only pages without inserting an inline stylesheet.
     cursor.style.cssText =
-      'position:absolute;left:0;top:0;width:22px;height:22px;will-change:transform;';
+      'position:absolute;left:-.83px;top:-.83px;width:22px;height:22px;will-change:transform;';
     cursor.style.transform = `translate3d(${state.position.x}px,${state.position.y}px,0)`;
     arrow = document.createElement('div');
     arrow.className = 'pointer';
@@ -199,7 +199,7 @@
           '<image width="32" height="32" opacity="0.55" href="' +
           data.replaceAll('&', '&amp;').replaceAll('"', '&quot;') +
           '"/>' +
-          '<g transform="translate(11 11) scale(.9)">' +
+          '<g transform="translate(10.4 10.4) scale(.9)">' +
           pointerPath +
           '</g></svg>',
       );
