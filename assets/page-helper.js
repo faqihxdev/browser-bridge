@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 13) return;
+  if (globalThis.__browserBridge?.version === 14) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -12,7 +12,7 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 13,
+    version: 14,
     documentId,
     refs: new Map(),
     sequence: 0,
@@ -130,9 +130,11 @@
       const dy = after.point[1] - before.point[1];
       const speed = Math.hypot(dx, dy) / (after.time - before.time || 1);
       if (speed > 0.001) heading += turn((Math.atan2(dy, dx) * 180) / Math.PI + 135 - heading);
-      const weight = Math.min(1, speed / (0.5 * peak));
+      // The first and last frames hold the starting angle and upright exactly.
+      const ends = index === 0 || index === samples.length - 1;
+      const weight = ends ? 0 : Math.min(1, speed / (0.5 * peak));
       const lean = weight * weight * (3 - 2 * weight);
-      const progress = Math.min(1, time / total);
+      const progress = index === samples.length - 1 ? 1 : Math.min(1, time / total);
       const angle = heading * lean + startAngle * (1 - lean) * (1 - progress);
       return {
         offset: progress,
