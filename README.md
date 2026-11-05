@@ -2,7 +2,7 @@
 
 Control your existing browsers from any local MCP agent, with visible activity and shared tab ownership.
 
-Compared with the [ChatGPT extension](https://learn.chatgpt.com/docs/chrome-extension), Browser Bridge exposes raw page/browser CDP and extension APIs without adding website allowlists or per-site approval gates. Use your preferred agent and customize routing, cursor, favicon and pacing. Agent policies and browser/OS protections still apply.
+Unlike the [ChatGPT extension](https://learn.chatgpt.com/docs/chrome-extension), Browser Bridge exposes raw page and browser CDP plus extension APIs, with no website allowlists or per-site approval gates. Agent policies and browser and OS protections still apply.
 
 [Checks](https://github.com/faqihxdev/browser-bridge/actions/workflows/checks.yml)
 
@@ -10,41 +10,27 @@ Compared with the [ChatGPT extension](https://learn.chatgpt.com/docs/chrome-exte
 
 ## Architecture
 
-A shared Node.js 24 manager routes MCP agents to persistent Playwright/CDP controllers, one per browser. Authenticated local pipes connect stdio adapters and Native Messaging hosts. The MV3 extension supplies browser APIs and a compact status/stop popup. Its live connection identity is verified inside the selected browser before API routing. Windows UI Automation handles native controls.
+A shared Node.js manager routes MCP agents to one persistent Playwright/CDP controller per browser. Authenticated local pipes connect stdio adapters and Native Messaging hosts. The MV3 extension supplies browser APIs and a status and stop popup once its connection identity is verified inside the selected browser. Windows UI Automation handles native controls.
 
 ![Browser Bridge architecture](docs/images/architecture.svg)
 
-## Engineering highlights
+## Highlights
 
-| Capability       | Implementation                                                                                                                                                                                                                                                                                        |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser routing  | Local discovery, names and aliases, independent selection per agent and a persistent controller per browser. Browser-qualified tab IDs retain their original destination.                                                                                                                             |
-| Fast actions     | Ordered batches reduce agent round trips. Targeted snapshots and bounded request history keep responses small. Background actions have no intentional pacing delay.                                                                                                                                   |
-| Tab ownership    | One agent per tab. Tabs left idle for 5 minutes release automatically; the next action reclaims them. Release and disconnect restore indicators. Human stop invalidates queued work and active batches.                                                                                               |
-| Visible activity | Persistent cursor and favicon overlay. Watched tabs move it along a varied straight, C or S path in 400 to 950 ms, scaled by distance, with the tip turned toward its heading, with 150 ms action pauses; switching away cancels pacing. At rest it drifts a few pixels. Release restores indicators. |
-| Broad access     | Page actions, JavaScript, raw page/browser CDP, cookies, network details, screenshots, PDFs, uploads and extension browser APIs.                                                                                                                                                                      |
-| Native Windows   | UI inspection, invocation, values, menus, keyboard/mouse input and window screenshots through a persistent helper.                                                                                                                                                                                    |
-| Verification     | Real-browser tests cover input, ownership, cancellation, navigation, favicon restoration, independent MCP clients and two simultaneous extension/native-host connections.                                                                                                                             |
+| Capability       | Implementation                                                                                                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser routing  | Discovery by name or alias, a separate browser selection per agent and one persistent controller per browser. Tab IDs keep their browser.                                                       |
+| Fast actions     | Unobstructed clicks, hovers and text fills take one page call plus the input events. Batches and targeted snapshots cut agent round trips. Background tabs keep your foreground focus.          |
+| Tab ownership    | One agent per tab. Idle tabs release after 5 minutes and the next action reclaims them. A human stop cancels queued work and active batches.                                                    |
+| Visible activity | A cursor and favicon overlay mark controlled tabs. In a watched tab the cursor travels tip first along varied paths and drifts at rest; switching away drops the pacing. Release restores both. |
+| Broad access     | Page actions, JavaScript, raw CDP, cookies, network details, screenshots, PDFs, uploads and extension APIs.                                                                                     |
+| Native Windows   | UI inspection, invocation, values, menus, input and window screenshots through a persistent helper.                                                                                             |
+| Verification     | Real-browser tests cover input, ownership, cancellation, navigation, indicators, several MCP clients and two simultaneous extension connections.                                                |
 
 ## Performance
 
-Median controller latency in milliseconds from `pnpm benchmark:latency`, against headless Chromium on Windows 11. Tabs are unwatched, so the numbers exclude cursor pacing. `6a66edd` is the commit before the latency work.
+![Median latency before and after optimization](docs/images/performance.svg)
 
-| Operation                          | `6a66edd` |  Now |
-| ---------------------------------- | --------: | ---: |
-| Click by selector                  |      10.3 |  1.4 |
-| Click by snapshot ref              |       7.6 |  1.3 |
-| Fill a text field                  |       9.3 |  1.2 |
-| Fill, click and read in one batch  |      21.3 |  3.6 |
-| Click deep in a 6,000-element page |      25.8 |  2.2 |
-| Snapshot, 200 of 6,000 elements    |      13.1 |  3.2 |
-| Snapshot, 1,000 of 6,000 elements  |      43.3 |  8.5 |
-| Snapshot across 9 frames           |       7.1 |  3.1 |
-| Open a tab and load a page         |      77.1 | 57.6 |
-
-Clicks, hovers and text fills on an unobstructed target in the top document take one helper call plus the input events. Other targets go through Playwright's actionability checks. Snapshots come back as JSON strings, which cross the protocol several times faster than serialized objects, and the helper source goes only to frames that lack it.
-
-The browser sets the remaining costs. A pointer move waits for the next frame, about 17 ms, a screenshot for one or two frames, and a new tab for its renderer process. Against Edge with 14 open tabs, the first call after the controller starts takes about 1 s, mostly while Playwright attaches to the existing tabs.
+Median controller latency in headless Chromium on Windows 11, compared with the code [before optimization](https://github.com/faqihxdev/browser-bridge/commit/6a66edd). Run `pnpm benchmark:latency` to reproduce it. Background tabs act without pacing. What remains is mostly browser time: a pointer move waits for the next frame, a screenshot for one or two frames and a new tab for its renderer process.
 
 ## Setup
 
@@ -56,14 +42,12 @@ pnpm build
 pnpm setup:local --codex
 ```
 
-In each browser, enable Developer mode at `chrome://extensions` and load unpacked `dist/extension`. Chromium browsers redirect these addresses to their own internal pages.
+In each browser, turn on Developer mode at `chrome://extensions` and load unpacked `dist/extension`. Other Chromium browsers redirect these addresses to their own pages. Load unpacked persists in that profile, while `--load-extension` lasts only for launches with the flag.
 
-Load unpacked registers the extension persistently in that profile. The `--load-extension` flag loads it only for launches that supply the flag.
+Then connect the browser one of two ways:
 
-Choose a connection:
-
-- **Existing profile:** enable remote debugging at `chrome://inspect/#remote-debugging`. Approve each new connection when prompted.
-- **Unattended:** launch with a custom `--user-data-dir`, fixed nonzero `--remote-debugging-port` and `--remote-debugging-address=127.0.0.1`. Save these flags in every launch shortcut. Configure its endpoint in `%LOCALAPPDATA%\BrowserBridge\config.json`:
+- **Existing profile:** enable remote debugging at `chrome://inspect/#remote-debugging` and approve each new connection.
+- **Unattended:** launch with a custom `--user-data-dir`, a fixed nonzero `--remote-debugging-port` and `--remote-debugging-address=127.0.0.1` in every shortcut, then add the endpoint to `%LOCALAPPDATA%\BrowserBridge\config.json`:
 
   ```json
   {
@@ -72,17 +56,18 @@ Choose a connection:
   }
   ```
 
-  This avoids the inspect-page approval prompt. Start with a fresh profile and sign in manually; copying encrypted profile data is unreliable. Port `0` enables the automation flag and can affect sign-in. Fixed-port Google sign-in was verified in Edge; website behavior can change.
+  This skips the approval prompt. Start from a fresh profile and sign in manually; copied encrypted profile data is unreliable. Port `0` sets the automation flag and can break sign-in. Google sign-in works with a fixed port in Edge.
 
-`--codex` adds the MCP server to your user Codex configuration. Restart the agent connection to load it. For other MCP clients, copy the generated `mcpServers` entry from `%LOCALAPPDATA%\BrowserBridge\mcp.json`.
+`--codex` registers the MCP server with Codex; restart the agent connection to load it. Other MCP clients can copy the `mcpServers` entry from `%LOCALAPPDATA%\BrowserBridge\mcp.json`. Then ask your agent to "control Edge" or "control Brave". Duplicate names need the browser ID from `pnpm browsers`.
 
-Ask your agent to "control Brave" or "control Edge". Each agent keeps its own selection; existing tab IDs retain their browser. Duplicate names require the browser ID from discovery. Foreground focus is preserved unless requested.
+### Operation
 
-The manager starts with the first agent or extension connection and exits ten minutes after the last disconnects. A claimed tab with no agent activity releases after `releaseIdleMs` in `config.json`, 300000 by default; `0` keeps claims until release. `pnpm browsers` lists discovered browsers. `pnpm doctor --browser Brave` checks attachment; `pnpm status` reports active control; `pnpm stop` disconnects and restores indicators.
-
-Discovery covers Edge, Chrome, Brave, Vivaldi, Opera/GX and Chromium, including Scoop installs. Custom `browsers` entries accept `name`, `aliases` and `userDataDir`. Settings and credentials stay in `%LOCALAPPDATA%\BrowserBridge`; `BROWSER_BRIDGE_HOME` selects a separate runtime directory.
-
-On Windows, optional `browsers[].windowsJumpList` settings accept `appId`, `cacheFile`, `executable` and common launch `arguments`. The controller watches that app's taskbar cache and restores normal/private window tasks through the Windows shell API when the browser drops its launch flags. Use the pinned shortcut's profile-specific AppUserModelID. PowerShell runs only during repairs.
+- The manager starts with the first connection and exits ten minutes after the last one closes.
+- `releaseIdleMs` in `config.json` sets the idle release, 300000 ms by default. `0` keeps claims until release.
+- Discovery covers Edge, Chrome, Brave, Vivaldi, Opera, Opera GX and Chromium, including Scoop installs. Custom `browsers` entries accept `name`, `aliases`, `userDataDir` and `endpoint`.
+- Settings and credentials live in `%LOCALAPPDATA%\BrowserBridge`. `BROWSER_BRIDGE_HOME` selects another directory.
+- `pnpm browsers` lists browsers, `pnpm doctor --browser Edge` checks attachment, `pnpm status` reports control and `pnpm stop` disconnects and restores indicators.
+- On Windows, `browsers[].windowsJumpList` takes `appId`, `cacheFile`, `executable` and `arguments`. The controller restores the taskbar's normal and private window tasks when the browser drops its launch flags. Use the pinned shortcut's profile-specific AppUserModelID.
 
 ## Development
 
@@ -91,16 +76,13 @@ pnpm check
 pnpm test
 pnpm test:integration
 pnpm test:extension
+pnpm benchmark:latency
 ```
 
-Browser tests use isolated Playwright Chromium, installed with `pnpm exec playwright-core install chromium`. `pnpm benchmark:latency` measures controller latency with the same browser. Extension tests also need setup registration. CI runs types, build and browser tests on Windows and Linux.
-
-Use Conventional Commits and `<name>/<type>-<description>` branches. Keep credentials, screenshots and browser content out of Git.
+Browser tests and the benchmark use isolated Playwright Chromium from `pnpm exec playwright-core install chromium`. Extension tests also need setup registration. CI runs types, build and browser tests on Windows and Linux. Use Conventional Commits and `<name>/<type>-<description>` branches, and keep credentials, screenshots and browser content out of Git.
 
 ## Scope
 
-The backend supports Chromium browsers. Firefox and Safari need separate backends. Independently named profiles use separate user-data directories. Connection prompts and debugging banners depend on the connection mode and browser.
+Browser Bridge supports Chromium browsers; Firefox and Safari would need separate backends. Independently named profiles need separate user-data directories, and connection prompts and debugging banners depend on the browser and connection mode.
 
-Control runs locally; requested results still reach your chosen agent. Ownership coordinates clients but does not isolate shared cookies or storage. Raw CDP and extension APIs are privileged escape hatches.
-
-Favicons remain subject to site and browser behavior. Native OS input uses the foreground desktop. Protected browser pages and OS security boundaries still apply.
+Control runs locally, but requested results reach your chosen agent. Ownership coordinates agents without isolating shared cookies or storage, and raw CDP and extension APIs are privileged. Favicons depend on site and browser behavior, and native input uses the foreground desktop. Protected browser pages and OS security boundaries still apply.
