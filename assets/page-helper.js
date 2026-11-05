@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 14) return;
+  if (globalThis.__browserBridge?.version === 15) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -12,7 +12,7 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 14,
+    version: 15,
     documentId,
     refs: new Map(),
     sequence: 0,
@@ -104,21 +104,21 @@
     ];
     return [
       { path: bend(from, over, kind), ms },
-      { path: stroke([over, to]), ms: 170 },
+      { path: stroke([over, to]), ms: 170, settle: true },
     ];
   };
   // The tip leads: the cursor turns around its tip toward its heading in proportion to speed,
-  // so it stands upright again as it slows down. The angle unwraps to avoid spinning.
+  // so it stands upright again as it slows down. The angle unwraps to avoid spinning, and it\n  // keeps its heading while settling back from an overshoot.
   const keyframes = (segments, startAngle) => {
     const total = segments.reduce((sum, segment) => sum + segment.ms, 0);
     const peak = (1.875 * segments[0].path.length) / segments[0].ms || 1;
     const samples = [];
     let elapsed = 0;
-    for (const { path, ms } of segments) {
+    for (const { path, ms, settle } of segments) {
       const steps = Math.max(2, Math.ceil(ms / 16));
       for (let index = samples.length ? 1 : 0; index <= steps; index++) {
         const t = index / steps;
-        samples.push({ time: elapsed + t * ms, point: path.at(minimumJerk(t)) });
+        samples.push({ time: elapsed + t * ms, point: path.at(minimumJerk(t)), settle });
       }
       elapsed += ms;
     }
@@ -129,7 +129,8 @@
       const dx = after.point[0] - before.point[0];
       const dy = after.point[1] - before.point[1];
       const speed = Math.hypot(dx, dy) / (after.time - before.time || 1);
-      if (speed > 0.001) heading += turn((Math.atan2(dy, dx) * 180) / Math.PI + 135 - heading);
+      if (speed > 0.001 && !after.settle)
+        heading += turn((Math.atan2(dy, dx) * 180) / Math.PI + 135 - heading);
       // The first and last frames hold the starting angle and upright exactly.
       const ends = index === 0 || index === samples.length - 1;
       const weight = ends ? 0 : Math.min(1, speed / (0.5 * peak));
