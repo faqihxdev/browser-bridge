@@ -17,7 +17,7 @@
 
 2026-11-03
 
-- Watched cursor travel uses a slight arc with distance-scaled timing. At rest the cursor drifts a few pixels so users can spot it. Reduced motion disables both.
+- Watched cursor travel varies between nearly straight, C and S paths with distance-scaled timing, and long reaches sometimes overshoot. The tip leads, turning around the click point in proportion to speed. At rest the cursor drifts a few pixels so users can spot it. Reduced motion disables both.
 
 2026-11-04
 

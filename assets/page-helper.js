@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__browserBridge?.version === 12) return;
+  if (globalThis.__browserBridge?.version === 13) return;
   const previous = globalThis.__browserBridge;
   const previousOwner = previous?.owner;
   const previousKey = previous?.ownerKey;
@@ -12,7 +12,7 @@
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   const state = {
-    version: 12,
+    version: 13,
     documentId,
     refs: new Map(),
     sequence: 0,
@@ -32,6 +32,114 @@
   // Fitts-style timing: long reaches take longer, short hops stay quick.
   const travelMs = (distance) =>
     Math.min(700, Math.max(400, 280 + 80 * Math.log2(1 + distance / 24)));
+  const minimumJerk = (t) => t * t * t * (10 - 15 * t + 6 * t * t);
+  const random = (low, high) => low + Math.random() * (high - low);
+  const side = () => (Math.random() < 0.5 ? -1 : 1);
+  const turn = (degrees) => ((((degrees + 180) % 360) + 360) % 360) - 180;
+  // Bezier curve parameterized by arc length, so the speed profile applies to distance.
+  const stroke = (points) => {
+    const curve = (u) => {
+      let level = points;
+      while (level.length > 1)
+        level = level
+          .slice(1)
+          .map((point, index) => [
+            level[index][0] + (point[0] - level[index][0]) * u,
+            level[index][1] + (point[1] - level[index][1]) * u,
+          ]);
+      return level[0];
+    };
+    const samples = Array.from({ length: 65 }, (_, index) => curve(index / 64));
+    const lengths = [0];
+    for (let index = 1; index < samples.length; index++)
+      lengths.push(
+        lengths[index - 1] +
+          Math.hypot(
+            samples[index][0] - samples[index - 1][0],
+            samples[index][1] - samples[index - 1][1],
+          ),
+      );
+    const length = lengths[64];
+    return {
+      length,
+      at(fraction) {
+        const target = fraction * length;
+        let index = 1;
+        while (index < 64 && lengths[index] < target) index++;
+        const span = lengths[index] - lengths[index - 1] || 1;
+        return curve((index - 1 + (target - lengths[index - 1]) / span) / 64);
+      },
+    };
+  };
+  // A nearly straight line, a C arc or an S curve that bends to a random side.
+  const bend = (from, to, kind) => {
+    const dx = to[0] - from[0];
+    const dy = to[1] - from[1];
+    const distance = Math.hypot(dx, dy) || 1;
+    const at = (along, across) => [
+      from[0] + dx * along - (dy / distance) * across,
+      from[1] + dy * along + (dx / distance) * across,
+    ];
+    if (kind === 's') {
+      const offset = Math.min(distance * random(0.08, 0.14), 46) * side();
+      return stroke([from, at(1 / 3, offset), at(2 / 3, -offset), to]);
+    }
+    const offset = kind === 'c' ? Math.min(distance * random(0.07, 0.16), 60) : distance * 0.03;
+    return stroke([from, at(0.5, offset * random(kind === 'c' ? 1 : 0, 1) * side()), to]);
+  };
+  // Each reach varies its shape and pace. Long reaches sometimes overshoot and settle back.
+  const route = (from, to) => {
+    const dx = to[0] - from[0];
+    const dy = to[1] - from[1];
+    const distance = Math.hypot(dx, dy);
+    const roll = Math.random();
+    const kind = roll < 0.3 ? 'line' : roll < 0.7 ? 'c' : 's';
+    const ms = Math.max(400, travelMs(distance) * random(0.9, 1.12));
+    if (distance <= 260 || Math.random() < 0.5) return [{ path: bend(from, to, kind), ms }];
+    const past = distance * random(0.02, 0.04);
+    const aside = distance * random(-0.015, 0.015);
+    const over = [
+      to[0] + (dx * past - dy * aside) / distance,
+      to[1] + (dy * past + dx * aside) / distance,
+    ];
+    return [
+      { path: bend(from, over, kind), ms },
+      { path: stroke([over, to]), ms: 170 },
+    ];
+  };
+  // The tip leads: the cursor turns around its tip toward its heading in proportion to speed,
+  // so it stands upright again as it slows down. The angle unwraps to avoid spinning.
+  const keyframes = (segments, startAngle) => {
+    const total = segments.reduce((sum, segment) => sum + segment.ms, 0);
+    const peak = (1.875 * segments[0].path.length) / segments[0].ms || 1;
+    const samples = [];
+    let elapsed = 0;
+    for (const { path, ms } of segments) {
+      const steps = Math.max(2, Math.ceil(ms / 16));
+      for (let index = samples.length ? 1 : 0; index <= steps; index++) {
+        const t = index / steps;
+        samples.push({ time: elapsed + t * ms, point: path.at(minimumJerk(t)) });
+      }
+      elapsed += ms;
+    }
+    let heading = startAngle;
+    return samples.map(({ time, point }, index) => {
+      const before = samples[Math.max(0, index - 1)];
+      const after = samples[Math.min(samples.length - 1, index + 1)];
+      const dx = after.point[0] - before.point[0];
+      const dy = after.point[1] - before.point[1];
+      const speed = Math.hypot(dx, dy) / (after.time - before.time || 1);
+      if (speed > 0.001) heading += turn((Math.atan2(dy, dx) * 180) / Math.PI + 135 - heading);
+      const weight = Math.min(1, speed / (0.5 * peak));
+      const lean = weight * weight * (3 - 2 * weight);
+      const progress = Math.min(1, time / total);
+      const angle = heading * lean + startAngle * (1 - lean) * (1 - progress);
+      return {
+        offset: progress,
+        transform: `translate3d(${point[0].toFixed(1)}px,${point[1].toFixed(1)}px,0) rotate(${angle.toFixed(1)}deg)`,
+      };
+    });
+  };
   const idleMs = 28000;
   const idleRadius = 3.2;
   // A slow, irregular wander: overlapping waves with random phases, softly held inside
@@ -92,7 +200,7 @@
     cursor.className = 'cursor';
     // CSSOM styles work on nonce-only pages without inserting an inline stylesheet.
     cursor.style.cssText =
-      'position:absolute;left:-.83px;top:-.83px;width:22px;height:22px;will-change:transform;';
+      'position:absolute;left:-.83px;top:-.83px;width:22px;height:22px;transform-origin:.83px .83px;will-change:transform;';
     cursor.style.transform = `translate3d(${state.position.x}px,${state.position.y}px,0)`;
     arrow = document.createElement('div');
     arrow.className = 'pointer';
@@ -250,24 +358,15 @@
     idle?.cancel();
     travel = idle = null;
     cursor.style.transform = `translate3d(${x}px,${y}px,0)`;
-    const dx = x - from.e;
-    const dy = y - from.f;
-    const distance = Math.hypot(dx, dy);
-    if (state.watched && !still() && distance >= 0.5) {
-      const duration = changed ? travelMs(distance) : 150;
-      // Hands reach along a slight arc with a minimum-jerk speed profile.
-      const bend = Math.min(distance * 0.1, 36) * (Math.random() < 0.5 ? -1 : 1);
-      const cx = from.e + dx / 2 - (dy / distance) * bend;
-      const cy = from.f + dy / 2 + (dx / distance) * bend;
-      const frames = Array.from({ length: 21 }, (_, index) => {
-        const t = index / 20;
-        const s = t * t * t * (10 - 15 * t + 6 * t * t);
-        const u = 1 - s;
-        const px = u * u * from.e + 2 * u * s * cx + s * s * x;
-        const py = u * u * from.f + 2 * u * s * cy + s * s * y;
-        return { transform: `translate3d(${px.toFixed(1)}px,${py.toFixed(1)}px,0)` };
-      });
-      travel = cursor.animate(frames, duration);
+    const angle = (Math.atan2(from.b, from.a) * 180) / Math.PI;
+    const distance = Math.hypot(x - from.e, y - from.f);
+    if (state.watched && !still() && (distance >= 0.5 || Math.abs(angle) >= 0.5)) {
+      const start = [from.e, from.f];
+      const segments = changed
+        ? route(start, [x, y])
+        : [{ path: stroke([start, [x, y]]), ms: 150 }];
+      const duration = segments.reduce((sum, segment) => sum + segment.ms, 0);
+      travel = cursor.animate(keyframes(segments, angle), duration);
       await wait(duration);
     }
     if (click && cursor && state.owner && state.watched) {

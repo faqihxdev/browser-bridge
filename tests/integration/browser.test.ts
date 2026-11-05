@@ -277,6 +277,36 @@ test(
             await animations.detach();
             await page.emulateMedia({ reducedMotion: 'no-preference' });
 
+            const cdp = await page.context().newCDPSession(page);
+            try {
+              const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+              const find = (node: any): any =>
+                node.attributes?.includes('cursor')
+                  ? node
+                  : [...(node.children ?? []), ...(node.shadowRoots ?? [])].map(find).find(Boolean);
+              const { object } = await cdp.send('DOM.resolveNode', { nodeId: find(root).nodeId });
+              const reaching = call('act', { action: 'move', x: 600, y: 420 });
+              await page.waitForFunction('globalThis.__browserBridge.position.x === 600');
+              const { result } = await cdp.send('Runtime.callFunctionOn', {
+                objectId: object.objectId!,
+                functionDeclaration:
+                  'function () { return this.getAnimations()[0]?.effect.getKeyframes().map((frame) => frame.transform) }',
+                returnByValue: true,
+              });
+              await reaching;
+              const frames: string[] = result.value;
+              const angles = frames.map((frame) =>
+                Number(/rotate\((-?[\d.]+)deg\)/.exec(frame)![1]),
+              );
+              assert.ok(
+                angles.some((angle) => Math.abs(angle) > 90),
+                'The tip turns toward a down-right heading',
+              );
+              assert.match(frames.at(-1)!, /^translate3d\(600px, 420px, 0px\) rotate\(0deg\)$/);
+            } finally {
+              await cdp.detach();
+            }
+
             const moving = call('act', { action: 'move', x: 130, y: 150 });
             await page.waitForFunction('globalThis.__browserBridge.position.x === 130');
             await page.evaluate('globalThis.__browserBridge.setAttention(false)');
